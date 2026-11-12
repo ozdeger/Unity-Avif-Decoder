@@ -1,0 +1,25 @@
+{
+  "name": "com.ozdeger.avif-decoder",
+  "version": "1.0.0",
+  "displayName": "AVIF Decoder",
+  "description": "Decodes AVIF images to 8-bit RGB in managed C#: no native plugins, no unsafe code, and the same pixels on every platform. A C# 9 / .NET Standard 2.1 port of the AV1 decoder in Meziantou.Framework.Imaging.",
+  "unity": "2021.2",
+  "license": "MIT",
+  "keywords": [
+    "avif",
+    "av1",
+    "image",
+    "decoder"
+  ],
+  "author": {
+    "name": "Gökay Özdeğer",
+    "url": "https://github.com/ozdeger"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ozdeger/Unity-Avif-Decoder.git"
+  },
+  "documentationUrl": "https://github.com/ozdeger/Unity-Avif-Decoder#readme",
+  "changelogUrl": "https://github.com/ozdeger/Unity-Avif-Decoder/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/ozdeger/Unity-Avif-Decoder/blob/main/LICENSE.md"
+}
