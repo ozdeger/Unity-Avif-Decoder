@@ -34,9 +34,18 @@ namespace AvifDecoding
 
         public void ChargeImage(int width, int height)
         {
-            _composedPixels += Math.Max((long)width * height, MinimumImagePixels);
+            _composedPixels += GetImageCharge(width, height);
+            EnsureComposedWithinLimits(_composedPixels);
+        }
+
+        // What an image of a size counts for in the budget
+        public static long GetImageCharge(long width, long height) => Math.Max(width * height, MinimumImagePixels);
+
+        // Refuses a total that is known before anything is decoded, from the sizes that the file declares
+        public void EnsureComposedWithinLimits(long pixels)
+        {
             var budget = MaxPixels > long.MaxValue / TotalFactor ? long.MaxValue : MaxPixels * TotalFactor;
-            if (_composedPixels > budget)
+            if (pixels > budget)
                 throw new ImageResourceLimitException($"The images that the file is built from exceed the limit of {budget} pixels in total.");
         }
     }

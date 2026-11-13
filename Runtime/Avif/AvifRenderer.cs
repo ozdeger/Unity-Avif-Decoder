@@ -11,6 +11,9 @@ namespace AvifDecoding
     {
         public static AvifImage Render(AvifImageNode node, AllocationScope scope, AvifPixelFormat format, AvifAlphaMode mode, bool applyTransforms)
         {
+            // Before anything is decoded: what the image costs by the sizes its items declare. Nested derivations that refer
+            // to the same inputs many times are refused here, at once; the sizes that are decoded are charged as they come.
+            scope.Limits.EnsureComposedWithinLimits(EstimateCost(node, new System.Collections.Generic.Dictionary<AvifImageNode, long>()));
             if (node.IsPlanar)
                 return RenderPlanar(node, scope, format, mode, applyTransforms);
 
@@ -234,6 +237,31 @@ namespace AvifDecoding
             return result;
         }
 
+        // The pixels of every image that rendering a node decodes or composes, each input counted once per reference, by the
+        // declared sizes. The nodes are shared, so the sum is computed once per node; it saturates instead of overflowing.
+        private static long EstimateCost(AvifImageNode node, System.Collections.Generic.Dictionary<AvifImageNode, long> known)
+        {
+            if (known.TryGetValue(node, out var cost))
+                return cost;
+
+            const long Saturated = long.MaxValue / 4;
+            cost = node.Kind switch
+            {
+                AvifImageKind.Coded => ImageResourceLimits.GetImageCharge(Math.Max(node.Width, 0), Math.Max(node.Height, 0)),
+                AvifImageKind.Identity => 0,
+                AvifImageKind.SampleTransform => ImageResourceLimits.GetImageCharge(Math.Max(node.Width, 0), Math.Max(node.Height, 0)),
+                _ => ImageResourceLimits.GetImageCharge(node.OutputWidth, node.OutputHeight),
+            };
+            foreach (var input in node.Inputs)
+                cost = Math.Min(cost + EstimateCost(input, known), Saturated);
+
+            if (node.Alpha != null)
+                cost = Math.Min(cost + EstimateCost(node.Alpha, known), Saturated);
+
+            known[node] = cost;
+            return cost;
+        }
+
         // The depth of the deepest coded image that a derived image is made of
         public static int GetDeepestBitDepth(AvifImageNode node)
         {
@@ -242,6 +270,10 @@ namespace AvifDecoding
             if (node.Kind == AvifImageKind.SampleTransform && node.Transform != null)
                 return node.Transform.BitDepth;
 
+            // Kept on the node: the nodes are shared, and a walk that followed every reference would not end
+            if (node.DeepestBitDepth != 0)
+                return node.DeepestBitDepth;
+
             var depth = 8;
             foreach (var input in node.Inputs)
                 depth = Math.Max(depth, GetDeepestBitDepth(input));
@@ -249,6 +281,7 @@ namespace AvifDecoding
             if (node.Alpha != null)
                 depth = Math.Max(depth, GetDeepestBitDepth(node.Alpha));
 
+            node.DeepestBitDepth = depth;
             return depth;
         }
     }

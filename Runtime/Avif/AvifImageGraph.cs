@@ -141,6 +141,9 @@ namespace AvifDecoding
 
         public bool IsDerived => Kind != AvifImageKind.Coded;
 
+        // The depth of the deepest coded image of a derived image, once AvifRenderer.GetDeepestBitDepth has computed it; 0 before
+        public int DeepestBitDepth { get; set; }
+
         // A grid whose tiles are all coded images is joined in YCbCr, like libavif; other derivations work in RGBA
         public bool IsPlanar => Kind == AvifImageKind.Coded || (Kind == AvifImageKind.Grid && Inputs.TrueForAll(input => input.Kind == AvifImageKind.Coded))
             || Kind == AvifImageKind.SampleTransform;
