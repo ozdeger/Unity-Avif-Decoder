@@ -20,7 +20,7 @@ https://github.com/ozdeger/Unity-Avif-Decoder.git
 Or add the line to `Packages/manifest.json`:
 
 ```json
-"com.ozdeger.avif-decoder": "https://github.com/ozdeger/Unity-Avif-Decoder.git#1.0.0"
+"com.ozdeger.avif-decoder": "https://github.com/ozdeger/Unity-Avif-Decoder.git#1.0.1"
 ```
 
 Outside Unity, build `Dotnet~/AvifDecoder.csproj` (.NET Standard 2.1) or add the `Runtime` folder to your project.
@@ -80,7 +80,8 @@ works off the main thread.
 
 ## What it decodes
 
-- The primary image of an AVIF file, with its crop (`clap`), rotation (`irot`) and mirroring (`imir`) applied.
+- The primary image of an AVIF file, with its crop (`clap`), rotation (`irot`) and mirroring (`imir`) applied, at the
+  operating point that `a1op` selects.
 - 8, 10 and 12-bit images, in 4:2:0, 4:2:2, 4:4:4 and monochrome, lossy and lossless.
 - Full and limited range, with the BT.601, BT.709, BT.2020 (non-constant luminance), FCC, SMPTE 240 and identity matrices.
 - The AV1 coding tools of still images, among them filter intra, chroma from luma, palette, intra block copy, all transform
@@ -91,6 +92,8 @@ Not supported, each with an `UnsupportedImageFeatureException`:
 
 - Grid images (`grid` items, which some cameras use for large photos) and image sequences without a still primary image.
 - The other matrices: YCgCo, BT.2020 constant luminance, ICtCp and the chromaticity-derived ones.
+- Layered and progressive images: their upper layers are inter frames. One whose `a1op` selects the base layer alone
+  decodes.
 - AV1 large-scale tile streams.
 
 Read but ignored:
@@ -125,18 +128,26 @@ dotnet run --project "Tests~/AvifDecoder.Tests.csproj" -c Release
 
 It checks:
 
-- **Pixels:** 44 test images against libavif with dav1d. Every sample is within 1 and over 99.6% are exact in every image.
-  The images cover the formats and tools listed above, odd sizes from 1 × 1, and the crop, rotation and mirroring.
-- **Hashes:** the decoded pixels of all 46 test images, recorded in `Tests~/Images/expected-hashes.txt`, so that any change
+- **Pixels:** 45 test images against libavif with dav1d. Every sample is within 1 and over 99.6% are exact in every image.
+  The images cover the formats and tools listed above, odd sizes from 1 × 1, the crop, rotation and mirroring, and an
+  operating point selected by `a1op`.
+- **Hashes:** the decoded pixels of all 47 test images, recorded in `Tests~/Images/expected-hashes.txt`, so that any change
   to the output shows.
 - **Transform kernels:** the generated 8-bit kernels against the reference transform for every size and type.
 - **Malformed input:** 960 truncated and corrupted files, which must decode or throw an `ImageDecodeException` within two
   seconds.
+- **Unsupported features:** a layered image must be refused with an `UnsupportedImageFeatureException`.
 - **Threads:** decodes on many threads at once give the same pixels.
 
 The test images are procedural, made by `Tests~/Images/make.py` with libavif's `avifenc` and `aomenc`, so they carry no
 third-party content. The decoder was also checked against 1,460 real-world AVIF photos, which are not included: every one
 decodes within 1 of dav1d.
+
+It was then run on the 391 files of three public AVIF test sets, which are not included either:
+[AOM's](https://github.com/AOMediaCodec/av1-avif/tree/main/testFiles), [Link-U's](https://github.com/link-u/avif-sample-images)
+and [libavif's](https://github.com/AOMediaCodec/libavif/tree/main/tests/data). The 367 files it decodes match libavif within
+1; the files that libavif itself rejects were compared with repaired copies. The other 24 (grids, layered images and the
+unsupported matrices) are refused with an `UnsupportedImageFeatureException`.
 
 `Tools~/generate_transform_kernels.py` regenerates `Runtime/Av1/Av1InverseTransform.Kernels.g.cs` and proves that no value
 in the 8-bit kernels can overflow 32 bits.

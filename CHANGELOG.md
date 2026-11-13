@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 - 2026-11-13
+
+- The operating point that an `a1op` property selects is decoded, so a layered image whose selected operating point holds only the base layer decodes.
+- Frames other than shown key frames, such as the upper layers of layered and progressive images, are refused with an `UnsupportedImageFeatureException`. They failed with an `InvalidImageContentException` before.
+
 ## 1.0.0 - 2026-11-12
 
 First release.

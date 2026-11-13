@@ -45,6 +45,9 @@ namespace AvifDecoding
 
         public int MirrorAxis { get; private set; } = -1;
 
+        // The operating point of the AV1 stream to decode (a1op), 0 without the property
+        public int OperatingPoint { get; private set; }
+
         public bool HasCleanAperture { get; private set; }
 
         public CleanAperture Crop { get; private set; }
@@ -328,6 +331,10 @@ namespace AvifDecoding
             else if (property.Type == FourCc("imir"))
             {
                 MirrorAxis = reader.ReadByte() & 1;
+            }
+            else if (property.Type == FourCc("a1op"))
+            {
+                OperatingPoint = reader.ReadByte();
             }
             else if (property.Type == FourCc("clap"))
             {

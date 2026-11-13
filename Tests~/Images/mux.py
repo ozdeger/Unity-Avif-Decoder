@@ -1,4 +1,5 @@
-# Wraps a Section 5 AV1 OBU stream (one key frame) in a minimal AVIF file
+# Wraps a Section 5 AV1 OBU stream (one key frame) in a minimal AVIF file. Usage: mux.py in.obu out.avif width height
+# [depth [operating point]]; an operating point adds an a1op property that selects it
 import struct,sys
 def box(t,payload): return struct.pack(">I",8+len(payload))+t.encode()+payload
 def fbox(t,v,f,payload): return box(t,bytes([v])+f.to_bytes(3,"big")+payload)
@@ -15,6 +16,7 @@ def obus(data):
         yield t,data[pos:p+size],data[p:p+size]; pos=p+size
 src,dst,w,h=sys.argv[1],sys.argv[2],int(sys.argv[3]),int(sys.argv[4])
 depth=int(sys.argv[5]) if len(sys.argv)>5 else 8
+op=int(sys.argv[6]) if len(sys.argv)>6 else None
 data=open(src,"rb").read()
 seq=[o for t,o,p in obus(data) if t==1][0]
 seqp=[p for t,o,p in obus(data) if t==1][0]
@@ -29,8 +31,10 @@ infe=fbox("infe",2,0,struct.pack(">HH",1,0)+b"av01"+b"\0")
 iinf=fbox("iinf",0,0,struct.pack(">H",1)+infe)
 ispe=fbox("ispe",0,0,struct.pack(">II",w,h))
 pixi=fbox("pixi",0,0,bytes([3,depth,depth,depth]))
-ipco=box("ipco",ispe+pixi+box("av1C",av1c))
-ipma=fbox("ipma",0,0,struct.pack(">IHB",1,1,3)+bytes([0x01,0x02,0x83]))
+a1op=box("a1op",bytes([op])) if op is not None else b""
+ipco=box("ipco",ispe+pixi+box("av1C",av1c)+a1op)
+assoc=bytes([0x01,0x02,0x83])+(bytes([0x84]) if a1op else b"")
+ipma=fbox("ipma",0,0,struct.pack(">IHB",1,1,len(assoc))+assoc)
 iprp=box("iprp",ipco+ipma)
 def build(off):
     iloc=fbox("iloc",0,0,bytes([0x44,0x00])+struct.pack(">HHHH",1,1,0,1)+struct.pack(">II",off,len(payload)))

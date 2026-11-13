@@ -3,12 +3,14 @@
 #
 # Needs: Python 3 with numpy and Pillow, avifenc and avifdec (libavif 1.x built with aom and dav1d), aomenc.
 # Run from anywhere: python3 make.py
-import os, shutil, subprocess, sys, tempfile
+import os, shutil, struct, subprocess, sys, tempfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MUX = os.path.join(HERE, "mux.py")
+# Files that the decoder must refuse with an UnsupportedImageFeatureException
+UNSUPPORTED = os.path.join(HERE, "unsupported")
 
 
 def noise(rng, h, w, cells):
@@ -60,6 +62,18 @@ def screen(w, h):
     return im
 
 
+# The body of the top-level mdat box, which holds the one item of an avifenc file
+def mdat_payload(path):
+    data = open(path, "rb").read()
+    pos = 0
+    while pos < len(data):
+        size, kind = struct.unpack(">I4s", data[pos:pos + 8])
+        if kind == b"mdat":
+            return data[pos + 8:pos + size]
+        pos += size
+    sys.exit(f"no mdat box in {path}")
+
+
 def run(*args):
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
@@ -70,6 +84,8 @@ def main():
     for name in os.listdir(HERE):
         if name.endswith((".avif", ".png")):
             os.remove(os.path.join(HERE, name))
+    shutil.rmtree(UNSUPPORTED, ignore_errors=True)
+    os.makedirs(UNSUPPORTED)
 
     tmp = tempfile.mkdtemp()
     src = lambda name: os.path.join(tmp, name + ".png")
@@ -151,6 +167,15 @@ def main():
     run("aomenc", "--limit=1", "--kf-max-dist=0", "--end-usage=q", "--cq-level=30", "--superres-mode=1",
         "--superres-kf-denominator=12", "--superres-denominator=12", "--obu", "-o", obu, y4m)
     run(sys.executable, MUX, obu, os.path.join(HERE, "superres.avif"), "256", "256")
+
+    # A layered image: the base layer is a key frame at half size, the second layer an inter frame predicted from it. The
+    # same stream with an a1op property that selects operating point 1, the base layer alone, decodes
+    progressive = os.path.join(UNSUPPORTED, "progressive.avif")
+    run("avifenc", "-j", "4", "--progressive", "-y", "420", "-q", "60", src("photo256"), progressive)
+    obu = os.path.join(tmp, "progressive.obu")
+    with open(obu, "wb") as f:
+        f.write(mdat_payload(progressive))
+    run(sys.executable, MUX, obu, os.path.join(HERE, "a1op_base.avif"), "128", "128", "8", "1")
 
     shutil.rmtree(tmp)
 

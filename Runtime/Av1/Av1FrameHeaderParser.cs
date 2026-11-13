@@ -13,6 +13,9 @@ namespace AvifDecoding
     internal ref struct Av1FrameHeaderParser
     {
 
+        // frame_type KEY_FRAME
+        private const int KeyFrame = 0;
+
         private readonly Av1SequenceHeader _sequence;
         private readonly Av1FrameHeader _header;
         private Av1BitReader _reader;
@@ -31,6 +34,7 @@ namespace AvifDecoding
         /// <param name="sequence">The active sequence header.</param>
         /// <param name="obu">The header of the OBU that carries the frame header.</param>
         /// <exception cref="InvalidImageContentException">The header is malformed or refers to a missing or incompatible reference frame.</exception>
+        /// <exception cref="UnsupportedImageFeatureException">The frame is not a shown key frame.</exception>
         public static Av1FrameHeader Parse(ref Av1BitReader reader, Av1SequenceHeader sequence, in Av1ObuHeader obu)
         {
             var parser = new Av1FrameHeaderParser(reader, sequence);
@@ -56,10 +60,12 @@ namespace AvifDecoding
             }
             else
             {
-                ReadFlag();
+                // Only shown key frames are decoded, and the syntax below is theirs. The upper layers of a layered or progressive
+                // image are inter frames, predicted from the layers below
+                var showExistingFrame = ReadFlag();
+                if (showExistingFrame || ReadBits(2) != KeyFrame || !ReadFlag())
+                    throw Av1Errors.Unsupported("frames other than shown key frames, as in the upper layers of a layered image");
 
-                ReadBits(2);
-                ReadFlag();
                 if (sequence.DecoderModelInfoPresent && !sequence.EqualPictureInterval)
                     ReadTemporalPointInfo();
             }

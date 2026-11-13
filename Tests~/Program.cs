@@ -18,6 +18,7 @@ namespace AvifDecoding.Tests
             failures += Section("Pixels against libavif + dav1d (at most 1 apart per channel)", () => ReferenceTests.Run(images));
             failures += Section("Pixels against the recorded hashes", () => HashTests.Run(images, args.Contains("--update-hashes")));
             failures += Section("Malformed and oversized input", () => MalformedInputTests.Run(images));
+            failures += Section("Unsupported features", () => UnsupportedTests.Run(images));
             failures += Section("Decodes on several threads at once", () => ParallelTests.Run(images));
 
             Console.WriteLine(failures == 0 ? "All checks passed." : $"{failures} check(s) failed.");

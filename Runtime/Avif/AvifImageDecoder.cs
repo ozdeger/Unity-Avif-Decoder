@@ -64,7 +64,7 @@ namespace AvifDecoding
                 limits.EnsureCanvasWithinLimits(container.Width, container.Height);
 
             var scope = new AllocationScope(limits);
-            using var decoder = new Av1Decoder(scope);
+            using var decoder = new Av1Decoder(scope, container.OperatingPoint);
             decoder.SetInput(container.Payload, 0, container.Payload.Length);
             var frame = decoder.DecodeNextOutputFrame(CancellationToken.None) ?? throw new InvalidImageContentException("The AVIF file is invalid: the AV1 payload has no frame.", ImageFormat.Avif);
             try
