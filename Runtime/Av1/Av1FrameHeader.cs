@@ -16,6 +16,20 @@ namespace AvifDecoding
     /// </summary>
     internal sealed class Av1FrameHeader
     {
+        public bool ShowExistingFrame { get; set; }
+
+        public int FrameToShowMapIdx { get; set; }
+
+        /// <summary>Gets or sets <c>frame_type</c>: <see cref="Av1Constants.KeyFrame"/>, <see cref="Av1Constants.InterFrame"/>, <see cref="Av1Constants.IntraOnlyFrame"/> or <see cref="Av1Constants.SwitchFrame"/>.</summary>
+        public int FrameType { get; set; }
+
+        public bool FrameIsIntra { get; set; }
+
+        public bool ShowFrame { get; set; }
+
+        public bool ShowableFrame { get; set; }
+
+        public bool ErrorResilientMode { get; set; }
 
         public bool DisableCdfUpdate { get; set; }
 
@@ -23,9 +37,31 @@ namespace AvifDecoding
 
         public bool ForceIntegerMv { get; set; }
 
+        public int CurrentFrameId { get; set; }
+
         public bool FrameSizeOverrideFlag { get; set; }
 
+        public int OrderHint { get; set; }
+
+        /// <summary>Gets or sets <c>primary_ref_frame</c>, <see cref="Av1Constants.PrimaryRefNone"/> when the frame loads no state.</summary>
+        public int PrimaryRefFrame { get; set; }
+
+        public int RefreshFrameFlags { get; set; }
+
         public bool AllowIntrabc { get; set; }
+
+        public bool AllowHighPrecisionMv { get; set; }
+
+        public bool UseRefFrameMvs { get; set; }
+
+        /// <summary><c>ref_frame_idx[ 0..6 ]</c>: the reference slot of LAST_FRAME + i.</summary>
+        public InlineArray8<sbyte> RefFrameIdx;
+
+        /// <summary><c>OrderHints[ refFrame ]</c> for LAST_FRAME to ALTREF_FRAME.</summary>
+        public InlineArray8<int> OrderHints;
+
+        /// <summary><c>RefFrameSignBias[ refFrame ]</c> for LAST_FRAME to ALTREF_FRAME.</summary>
+        public InlineArray8<bool> RefFrameSignBias;
 
         /// <summary>Gets or sets the width of the coded frame, before super-resolution upscaling.</summary>
         public int FrameWidth { get; set; }
@@ -35,6 +71,10 @@ namespace AvifDecoding
         /// <summary>Gets or sets the width of the frame after super-resolution upscaling.</summary>
         public int UpscaledWidth { get; set; }
 
+        public int RenderWidth { get; set; }
+
+        public int RenderHeight { get; set; }
+
         public bool UseSuperres { get; set; }
 
         public int SuperresDenom { get; set; }
@@ -42,6 +82,11 @@ namespace AvifDecoding
         public int MiCols { get; set; }
 
         public int MiRows { get; set; }
+
+        /// <summary>Gets or sets <c>interpolation_filter</c>, <see cref="Av1Constants.Switchable"/> when blocks select their filter.</summary>
+        public int InterpolationFilter { get; set; }
+
+        public bool IsMotionModeSwitchable { get; set; }
 
         public bool DisableFrameEndUpdateCdf { get; set; }
 
@@ -84,6 +129,10 @@ namespace AvifDecoding
         public int QmV { get; set; }
 
         public bool SegmentationEnabled { get; set; }
+
+        public bool SegmentationUpdateMap { get; set; }
+
+        public bool SegmentationTemporalUpdate { get; set; }
 
         public bool SegmentationUpdateData { get; set; }
 
@@ -144,7 +193,18 @@ namespace AvifDecoding
         /// <summary>Gets or sets <c>TxMode</c>: <see cref="Av1Constants.Only4x4"/>, <see cref="Av1Constants.TxModeLargest"/> or <see cref="Av1Constants.TxModeSelect"/>.</summary>
         public int TxMode { get; set; }
 
+        public bool ReferenceSelect { get; set; }
+
+        public bool SkipModePresent { get; set; }
+
+        /// <summary><c>SkipModeFrame[ 0..1 ]</c>.</summary>
+        public InlineArray2<byte> SkipModeFrame;
+
+        public bool AllowWarpedMotion { get; set; }
+
         public bool ReducedTxSet { get; set; }
+
+        public Av1GlobalMotion GlobalMotion;
 
         /// <summary>Gets or sets the film grain parameters, <see langword="null"/> when no grain is applied to the frame.</summary>
         public Av1FilmGrainParameters? FilmGrain { get; set; }

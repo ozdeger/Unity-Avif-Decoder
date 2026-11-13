@@ -12,18 +12,21 @@ namespace AvifDecoding
     /// </summary>
     internal ref struct Av1FrameHeaderParser
     {
-
-        // frame_type KEY_FRAME
-        private const int KeyFrame = 0;
+        private const int AllFrames = (1 << Av1Constants.NumRefFrames) - 1;
 
         private readonly Av1SequenceHeader _sequence;
+        private readonly ReadOnlySpan<Av1FrameBuffer?> _slots;
+        private readonly Span<bool> _refValid;
         private readonly Av1FrameHeader _header;
         private Av1BitReader _reader;
+        private Av1GlobalMotion _previousGlobalMotion;
 
-        private Av1FrameHeaderParser(Av1BitReader reader, Av1SequenceHeader sequence) :this()
+        private Av1FrameHeaderParser(Av1BitReader reader, Av1SequenceHeader sequence, ReadOnlySpan<Av1FrameBuffer?> slots, Span<bool> refValid) :this()
         {
             _reader = reader;
             _sequence = sequence;
+            _slots = slots;
+            _refValid = refValid;
             _header = new Av1FrameHeader();
         }
 
@@ -33,11 +36,12 @@ namespace AvifDecoding
         /// <param name="reader">The reader, positioned at the first bit of the header.</param>
         /// <param name="sequence">The active sequence header.</param>
         /// <param name="obu">The header of the OBU that carries the frame header.</param>
+        /// <param name="slots">The 8 reference frame slots; an empty slot is <see langword="null"/>.</param>
+        /// <param name="refValid"><c>RefValid</c>: updated by the reference frame marking of the header.</param>
         /// <exception cref="InvalidImageContentException">The header is malformed or refers to a missing or incompatible reference frame.</exception>
-        /// <exception cref="UnsupportedImageFeatureException">The frame is not a shown key frame.</exception>
-        public static Av1FrameHeader Parse(ref Av1BitReader reader, Av1SequenceHeader sequence, in Av1ObuHeader obu)
+        public static Av1FrameHeader Parse(ref Av1BitReader reader, Av1SequenceHeader sequence, in Av1ObuHeader obu, ReadOnlySpan<Av1FrameBuffer?> slots, Span<bool> refValid)
         {
-            var parser = new Av1FrameHeaderParser(reader, sequence);
+            var parser = new Av1FrameHeaderParser(reader, sequence, slots, refValid);
             parser._header.TemporalId = obu.TemporalId;
             parser._header.SpatialId = obu.SpatialId;
             parser.ReadUncompressedHeader();
@@ -49,6 +53,11 @@ namespace AvifDecoding
 
         private int ReadBits(int count) => (int)_reader.ReadBits(count);
 
+        private Av1FrameBuffer GetSlot(int index)
+        {
+            return _slots[index] ?? throw Av1Errors.Invalid("a frame refers to an empty reference slot.");
+        }
+
         // Section 5.9.2 "Uncompressed header syntax"
         private void ReadUncompressedHeader()
         {
@@ -57,53 +66,102 @@ namespace AvifDecoding
             var idLength = sequence.FrameIdLength;
             if (sequence.ReducedStillPictureHeader)
             {
+                header.FrameType = Av1Constants.KeyFrame;
+                header.FrameIsIntra = true;
+                header.ShowFrame = true;
+                header.ErrorResilientMode = true;
             }
             else
             {
-                // Only shown key frames are decoded, and the syntax below is theirs. The upper layers of a layered or progressive
-                // image are inter frames, predicted from the layers below
-                var showExistingFrame = ReadFlag();
-                if (showExistingFrame || ReadBits(2) != KeyFrame || !ReadFlag())
-                    throw Av1Errors.Unsupported("frames other than shown key frames, as in the upper layers of a layered image");
+                header.ShowExistingFrame = ReadFlag();
+                if (header.ShowExistingFrame)
+                {
+                    ReadShowExistingFrame(idLength);
+                    return;
+                }
 
-                if (sequence.DecoderModelInfoPresent && !sequence.EqualPictureInterval)
+                header.FrameType = ReadBits(2);
+                header.FrameIsIntra = header.FrameType is Av1Constants.IntraOnlyFrame or Av1Constants.KeyFrame;
+                header.ShowFrame = ReadFlag();
+                if (header.ShowFrame && sequence.DecoderModelInfoPresent && !sequence.EqualPictureInterval)
                     ReadTemporalPointInfo();
+
+                header.ShowableFrame = header.ShowFrame ? header.FrameType is not Av1Constants.KeyFrame : ReadFlag();
+                header.ErrorResilientMode = header.FrameType is Av1Constants.SwitchFrame || (header.FrameType is Av1Constants.KeyFrame && header.ShowFrame) || ReadFlag();
             }
+
+            if (header.FrameType is Av1Constants.KeyFrame && header.ShowFrame)
+                _refValid.Clear();
 
             header.DisableCdfUpdate = ReadFlag();
             header.AllowScreenContentTools = sequence.ForceScreenContentTools is Av1Constants.SelectScreenContentTools ? ReadFlag() : sequence.ForceScreenContentTools is not 0;
             if (header.AllowScreenContentTools)
                 header.ForceIntegerMv = sequence.ForceIntegerMv is Av1Constants.SelectIntegerMv ? ReadFlag() : sequence.ForceIntegerMv is not 0;
 
-            header.ForceIntegerMv = true;
+            if (header.FrameIsIntra)
+                header.ForceIntegerMv = true;
 
             if (sequence.FrameIdNumbersPresent)
             {
-                ReadBits(idLength);
+                header.CurrentFrameId = ReadBits(idLength);
+                MarkRefFrames(idLength);
             }
 
-            if (!sequence.ReducedStillPictureHeader)
+            if (header.FrameType is Av1Constants.SwitchFrame)
+            {
+                header.FrameSizeOverrideFlag = true;
+            }
+            else if (!sequence.ReducedStillPictureHeader)
             {
                 header.FrameSizeOverrideFlag = ReadFlag();
             }
 
-            ReadBits(sequence.OrderHintBits);
+            header.OrderHint = ReadBits(sequence.OrderHintBits);
+            header.PrimaryRefFrame = header.FrameIsIntra || header.ErrorResilientMode ? Av1Constants.PrimaryRefNone : ReadBits(3);
             if (sequence.DecoderModelInfoPresent)
                 ReadBufferRemovalTimes();
 
+            header.RefreshFrameFlags = header.FrameType is Av1Constants.SwitchFrame || (header.FrameType is Av1Constants.KeyFrame && header.ShowFrame) ? AllFrames : ReadBits(8);
+            if (header.FrameType is Av1Constants.IntraOnlyFrame && header.RefreshFrameFlags is AllFrames)
+                throw Av1Errors.Invalid("an intra-only frame refreshes every reference frame.");
+
+            if ((!header.FrameIsIntra || header.RefreshFrameFlags is not AllFrames) && header.ErrorResilientMode && sequence.EnableOrderHint)
+            {
+                for (var i = 0; i < Av1Constants.NumRefFrames; i++)
+                {
+                    var refOrderHint = ReadBits(sequence.OrderHintBits);
+                    if (_slots[i] is not { } slot || slot.Header.OrderHint != refOrderHint)
+                        _refValid[i] = false;
+                }
+            }
+
+            if (header.FrameIsIntra)
             {
                 ReadFrameSize();
                 ReadRenderSize();
                 if (header.AllowScreenContentTools && header.UpscaledWidth == header.FrameWidth)
                     header.AllowIntrabc = ReadFlag();
             }
+            else
+            {
+                ReadInterFrameSetup(idLength);
+            }
 
             header.DisableFrameEndUpdateCdf = sequence.ReducedStillPictureHeader || header.DisableCdfUpdate || ReadFlag();
 
             // setup_past_independence() or load_previous(): the state that the syntax below updates
+            if (header.PrimaryRefFrame is Av1Constants.PrimaryRefNone)
             {
                 header.LoopFilterDeltaEnabled = true;
                 header.LoopFilterDeltas = Av1LoopFilterDeltas.Default;
+                _previousGlobalMotion = Av1GlobalMotion.Identity;
+            }
+            else
+            {
+                var previous = GetSlot(header.RefFrameIdx[header.PrimaryRefFrame]).Header;
+                header.LoopFilterDeltas = previous.LoopFilterDeltas;
+                header.Segmentation = previous.Segmentation;
+                _previousGlobalMotion = previous.GlobalMotion;
             }
 
             ReadTileInfo();
@@ -116,8 +174,36 @@ namespace AvifDecoding
             ReadCdefParams();
             ReadLoopRestorationParams();
             ReadTxMode();
+            header.ReferenceSelect = !header.FrameIsIntra && ReadFlag();
+            ReadSkipModeParams();
+            header.AllowWarpedMotion = !header.FrameIsIntra && !header.ErrorResilientMode && sequence.EnableWarpedMotion && ReadFlag();
             header.ReducedTxSet = ReadFlag();
+            ReadGlobalMotionParams();
             ReadFilmGrainParams();
+        }
+
+        private void ReadShowExistingFrame(int idLength)
+        {
+            var header = _header;
+            header.FrameToShowMapIdx = ReadBits(3);
+            if (_sequence.DecoderModelInfoPresent && !_sequence.EqualPictureInterval)
+                ReadTemporalPointInfo();
+
+            var slot = GetSlot(header.FrameToShowMapIdx);
+            if (_sequence.FrameIdNumbersPresent)
+            {
+                var displayFrameId = ReadBits(idLength);
+                if (displayFrameId != slot.Header.CurrentFrameId || !_refValid[header.FrameToShowMapIdx])
+                    throw Av1Errors.Invalid("the identifier of the frame to show does not match its reference slot.");
+            }
+
+            if (!slot.Header.ShowableFrame)
+                throw Av1Errors.Invalid("a frame that is not showable is shown.");
+
+            header.FrameType = slot.Header.FrameType;
+            header.RefreshFrameFlags = header.FrameType is Av1Constants.KeyFrame ? AllFrames : 0;
+            if (_sequence.FilmGrainParamsPresent)
+                header.FilmGrain = slot.Header.FilmGrain;
         }
 
         private void ReadTemporalPointInfo() => _reader.Skip(_sequence.FramePresentationTimeLength);
@@ -140,6 +226,101 @@ namespace AvifDecoding
             }
         }
 
+        // Section 5.9.4 "Reference frame marking function"
+        private void MarkRefFrames(int idLength)
+        {
+            var diffLength = _sequence.DeltaFrameIdLength;
+            var current = _header.CurrentFrameId;
+            for (var i = 0; i < Av1Constants.NumRefFrames; i++)
+            {
+                if (_slots[i] is not { } slot)
+                    continue;
+
+                var refFrameId = slot.Header.CurrentFrameId;
+                if (current > (1 << diffLength))
+                {
+                    if (refFrameId > current || refFrameId < current - (1 << diffLength))
+                        _refValid[i] = false;
+                }
+                else if (refFrameId > current && refFrameId < (1 << idLength) + current - (1 << diffLength))
+                {
+                    _refValid[i] = false;
+                }
+            }
+        }
+
+        private void ReadInterFrameSetup(int idLength)
+        {
+            var header = _header;
+            var sequence = _sequence;
+            var shortSignaling = sequence.EnableOrderHint && ReadFlag();
+            if (shortSignaling)
+            {
+                var lastFrameIdx = ReadBits(3);
+                var goldFrameIdx = ReadBits(3);
+                SetFrameRefs(lastFrameIdx, goldFrameIdx);
+            }
+
+            for (var i = 0; i < Av1Constants.RefsPerFrame; i++)
+            {
+                if (!shortSignaling)
+                    header.RefFrameIdx[i] = (sbyte)ReadBits(3);
+
+                var slotIndex = header.RefFrameIdx[i];
+                var slot = GetSlot(slotIndex);
+                if (!_refValid[slotIndex])
+                    throw Av1Errors.Invalid("a frame refers to a reference frame that is not valid.");
+
+                if (slot.Sequence.BitDepth != sequence.BitDepth || slot.Sequence.SubsamplingX != sequence.SubsamplingX || slot.Sequence.SubsamplingY != sequence.SubsamplingY || slot.Sequence.Monochrome != sequence.Monochrome)
+                    throw Av1Errors.Invalid("a reference frame has a different sample format.");
+
+                if (sequence.FrameIdNumbersPresent)
+                {
+                    var deltaFrameId = ReadBits(sequence.DeltaFrameIdLength) + 1;
+                    var expectedFrameId = (header.CurrentFrameId + (1 << idLength) - deltaFrameId) % (1 << idLength);
+                    if (expectedFrameId != slot.Header.CurrentFrameId)
+                        throw Av1Errors.Invalid("a reference frame does not have the expected identifier.");
+                }
+            }
+
+            if (header.FrameSizeOverrideFlag && !header.ErrorResilientMode)
+            {
+                ReadFrameSizeWithRefs();
+            }
+            else
+            {
+                ReadFrameSize();
+                ReadRenderSize();
+            }
+
+            // Section 6.8.6: a reference frame is at most twice as large and sixteen times as small as the frame
+            for (var i = 0; i < Av1Constants.RefsPerFrame; i++)
+            {
+                var reference = GetSlot(header.RefFrameIdx[i]).Header;
+                if (2 * header.FrameWidth < reference.UpscaledWidth
+                    || 2 * header.FrameHeight < reference.FrameHeight
+                    || header.FrameWidth > 16 * reference.UpscaledWidth
+                    || header.FrameHeight > 16 * reference.FrameHeight)
+                {
+                    throw Av1Errors.Invalid("the size of a reference frame is outside the scaling limits.");
+                }
+            }
+
+            header.AllowHighPrecisionMv = !header.ForceIntegerMv && ReadFlag();
+
+            // read_interpolation_filter()
+            header.InterpolationFilter = ReadFlag() ? Av1Constants.Switchable : ReadBits(2);
+            header.IsMotionModeSwitchable = ReadFlag();
+            header.UseRefFrameMvs = !header.ErrorResilientMode && sequence.EnableRefFrameMvs && ReadFlag();
+            for (var i = 0; i < Av1Constants.RefsPerFrame; i++)
+            {
+                var refFrame = Av1Constants.LastFrame + i;
+                var hint = GetSlot(header.RefFrameIdx[i]).Header.OrderHint;
+                header.OrderHints[refFrame] = hint;
+                header.RefFrameSignBias[refFrame] = sequence.EnableOrderHint && GetRelativeDistance(hint, header.OrderHint) > 0;
+            }
+        }
+
         /// <summary>Returns <c>get_relative_dist( a, b )</c> (section 5.9.3) for the order hints of the sequence.</summary>
         public static int GetRelativeDistance(Av1SequenceHeader sequence, int a, int b)
         {
@@ -153,16 +334,151 @@ namespace AvifDecoding
 
         private readonly int GetRelativeDistance(int a, int b) => GetRelativeDistance(_sequence, a, b);
 
+        // Section 7.8 "Set frame refs process"
+        private void SetFrameRefs(int lastFrameIdx, int goldFrameIdx)
+        {
+            var header = _header;
+            for (var i = 0; i < Av1Constants.RefsPerFrame; i++)
+            {
+                header.RefFrameIdx[i] = -1;
+            }
+
+            header.RefFrameIdx[Av1Constants.LastFrame - Av1Constants.LastFrame] = (sbyte)lastFrameIdx;
+            header.RefFrameIdx[Av1Constants.GoldenFrame - Av1Constants.LastFrame] = (sbyte)goldFrameIdx;
+
+            Span<bool> usedFrame = stackalloc bool[Av1Constants.NumRefFrames];
+            usedFrame[lastFrameIdx] = true;
+            usedFrame[goldFrameIdx] = true;
+
+            var curFrameHint = 1 << (_sequence.OrderHintBits - 1);
+            Span<int> shiftedOrderHints = stackalloc int[Av1Constants.NumRefFrames];
+            for (var i = 0; i < Av1Constants.NumRefFrames; i++)
+            {
+                shiftedOrderHints[i] = curFrameHint + GetRelativeDistance(GetSlot(i).Header.OrderHint, header.OrderHint);
+            }
+
+            if (shiftedOrderHints[lastFrameIdx] >= curFrameHint || shiftedOrderHints[goldFrameIdx] >= curFrameHint)
+                throw Av1Errors.Invalid("the last or golden reference frame is not a forward reference.");
+
+            // ALTREF_FRAME: the backward reference with the highest output order
+            var reference = FindLatestBackward(shiftedOrderHints, usedFrame, curFrameHint);
+            if (reference >= 0)
+            {
+                header.RefFrameIdx[Av1Constants.AltrefFrame - Av1Constants.LastFrame] = (sbyte)reference;
+                usedFrame[reference] = true;
+            }
+
+            // BWDREF_FRAME: the closest backward reference
+            reference = FindEarliestBackward(shiftedOrderHints, usedFrame, curFrameHint);
+            if (reference >= 0)
+            {
+                header.RefFrameIdx[Av1Constants.BwdrefFrame - Av1Constants.LastFrame] = (sbyte)reference;
+                usedFrame[reference] = true;
+            }
+
+            // ALTREF2_FRAME: the next closest backward reference
+            reference = FindEarliestBackward(shiftedOrderHints, usedFrame, curFrameHint);
+            if (reference >= 0)
+            {
+                header.RefFrameIdx[Av1Constants.Altref2Frame - Av1Constants.LastFrame] = (sbyte)reference;
+                usedFrame[reference] = true;
+            }
+
+            // The remaining references are forward references in anti-chronological order
+            foreach (var refFrame in Av1Tables.RefFrameList)
+            {
+                if (header.RefFrameIdx[refFrame - Av1Constants.LastFrame] >= 0)
+                    continue;
+
+                reference = FindLatestForward(shiftedOrderHints, usedFrame, curFrameHint);
+                if (reference >= 0)
+                {
+                    header.RefFrameIdx[refFrame - Av1Constants.LastFrame] = (sbyte)reference;
+                    usedFrame[reference] = true;
+                }
+            }
+
+            // Any remaining reference is the frame with the smallest output order
+            reference = -1;
+            var earliestOrderHint = 0;
+            for (var i = 0; i < Av1Constants.NumRefFrames; i++)
+            {
+                var hint = shiftedOrderHints[i];
+                if (reference < 0 || hint < earliestOrderHint)
+                {
+                    reference = i;
+                    earliestOrderHint = hint;
+                }
+            }
+
+            for (var i = 0; i < Av1Constants.RefsPerFrame; i++)
+            {
+                if (header.RefFrameIdx[i] < 0)
+                    header.RefFrameIdx[i] = (sbyte)reference;
+            }
+        }
+
+        private static int FindLatestBackward(ReadOnlySpan<int> shiftedOrderHints, ReadOnlySpan<bool> usedFrame, int curFrameHint)
+        {
+            var reference = -1;
+            var latestOrderHint = 0;
+            for (var i = 0; i < Av1Constants.NumRefFrames; i++)
+            {
+                var hint = shiftedOrderHints[i];
+                if (!usedFrame[i] && hint >= curFrameHint && (reference < 0 || hint >= latestOrderHint))
+                {
+                    reference = i;
+                    latestOrderHint = hint;
+                }
+            }
+
+            return reference;
+        }
+
+        private static int FindEarliestBackward(ReadOnlySpan<int> shiftedOrderHints, ReadOnlySpan<bool> usedFrame, int curFrameHint)
+        {
+            var reference = -1;
+            var earliestOrderHint = 0;
+            for (var i = 0; i < Av1Constants.NumRefFrames; i++)
+            {
+                var hint = shiftedOrderHints[i];
+                if (!usedFrame[i] && hint >= curFrameHint && (reference < 0 || hint < earliestOrderHint))
+                {
+                    reference = i;
+                    earliestOrderHint = hint;
+                }
+            }
+
+            return reference;
+        }
+
+        private static int FindLatestForward(ReadOnlySpan<int> shiftedOrderHints, ReadOnlySpan<bool> usedFrame, int curFrameHint)
+        {
+            var reference = -1;
+            var latestOrderHint = 0;
+            for (var i = 0; i < Av1Constants.NumRefFrames; i++)
+            {
+                var hint = shiftedOrderHints[i];
+                if (!usedFrame[i] && hint < curFrameHint && (reference < 0 || hint >= latestOrderHint))
+                {
+                    reference = i;
+                    latestOrderHint = hint;
+                }
+            }
+
+            return reference;
+        }
+
         // Section 5.9.5 "Frame size syntax"
         private void ReadFrameSize()
         {
             var header = _header;
             if (header.FrameSizeOverrideFlag)
             {
+                // A frame larger than max_frame_width_minus_1 + 1 breaks a conformance requirement, but dav1d and libaom decode
+                // it (some encoders write one when they resize frames), and nothing is sized from the maximum
                 header.FrameWidth = ReadBits(_sequence.FrameWidthBits) + 1;
                 header.FrameHeight = ReadBits(_sequence.FrameHeightBits) + 1;
-                if (header.FrameWidth > _sequence.MaxFrameWidth || header.FrameHeight > _sequence.MaxFrameHeight)
-                    throw Av1Errors.Invalid("a frame is larger than the maximum size of its sequence.");
             }
             else
             {
@@ -174,14 +490,44 @@ namespace AvifDecoding
             ComputeImageSize();
         }
 
-        // Section 5.9.6 "Render size syntax": the render size is read past, the image is the frame
+        // Section 5.9.6 "Render size syntax"
         private void ReadRenderSize()
         {
-            if (!ReadFlag())
-                return;
+            var header = _header;
+            if (ReadFlag())
+            {
+                header.RenderWidth = ReadBits(16) + 1;
+                header.RenderHeight = ReadBits(16) + 1;
+            }
+            else
+            {
+                header.RenderWidth = header.UpscaledWidth;
+                header.RenderHeight = header.FrameHeight;
+            }
+        }
 
-            ReadBits(16);
-            ReadBits(16);
+        // Section 5.9.7 "Frame size with refs syntax"
+        private void ReadFrameSizeWithRefs()
+        {
+            var header = _header;
+            for (var i = 0; i < Av1Constants.RefsPerFrame; i++)
+            {
+                if (!ReadFlag())
+                    continue;
+
+                var reference = GetSlot(header.RefFrameIdx[i]).Header;
+                header.UpscaledWidth = reference.UpscaledWidth;
+                header.FrameWidth = header.UpscaledWidth;
+                header.FrameHeight = reference.FrameHeight;
+                header.RenderWidth = reference.RenderWidth;
+                header.RenderHeight = reference.RenderHeight;
+                ReadSuperresParams();
+                ComputeImageSize();
+                return;
+            }
+
+            ReadFrameSize();
+            ReadRenderSize();
         }
 
         // Section 5.9.8 "Superres params syntax"
@@ -402,8 +748,16 @@ namespace AvifDecoding
             header.SegmentationEnabled = ReadFlag();
             if (header.SegmentationEnabled)
             {
+                if (header.PrimaryRefFrame is Av1Constants.PrimaryRefNone)
                 {
+                    header.SegmentationUpdateMap = true;
                     header.SegmentationUpdateData = true;
+                }
+                else
+                {
+                    header.SegmentationUpdateMap = ReadFlag();
+                    header.SegmentationTemporalUpdate = header.SegmentationUpdateMap && ReadFlag();
+                    header.SegmentationUpdateData = ReadFlag();
                 }
 
                 if (header.SegmentationUpdateData)
@@ -607,6 +961,193 @@ namespace AvifDecoding
             }
         }
 
+        // Section 5.9.22 "Skip mode params syntax"
+        private void ReadSkipModeParams()
+        {
+            var header = _header;
+            var skipModeAllowed = false;
+            if (!header.FrameIsIntra && header.ReferenceSelect && _sequence.EnableOrderHint)
+            {
+                var forwardIdx = -1;
+                var backwardIdx = -1;
+                var forwardHint = 0;
+                var backwardHint = 0;
+                for (var i = 0; i < Av1Constants.RefsPerFrame; i++)
+                {
+                    var refHint = GetSlot(header.RefFrameIdx[i]).Header.OrderHint;
+                    if (GetRelativeDistance(refHint, header.OrderHint) < 0)
+                    {
+                        if (forwardIdx < 0 || GetRelativeDistance(refHint, forwardHint) > 0)
+                        {
+                            forwardIdx = i;
+                            forwardHint = refHint;
+                        }
+                    }
+                    else if (GetRelativeDistance(refHint, header.OrderHint) > 0)
+                    {
+                        if (backwardIdx < 0 || GetRelativeDistance(refHint, backwardHint) < 0)
+                        {
+                            backwardIdx = i;
+                            backwardHint = refHint;
+                        }
+                    }
+                }
+
+                if (forwardIdx < 0)
+                {
+                    skipModeAllowed = false;
+                }
+                else if (backwardIdx >= 0)
+                {
+                    skipModeAllowed = true;
+                    header.SkipModeFrame[0] = (byte)(Av1Constants.LastFrame + Math.Min(forwardIdx, backwardIdx));
+                    header.SkipModeFrame[1] = (byte)(Av1Constants.LastFrame + Math.Max(forwardIdx, backwardIdx));
+                }
+                else
+                {
+                    var secondForwardIdx = -1;
+                    var secondForwardHint = 0;
+                    for (var i = 0; i < Av1Constants.RefsPerFrame; i++)
+                    {
+                        var refHint = GetSlot(header.RefFrameIdx[i]).Header.OrderHint;
+                        if (GetRelativeDistance(refHint, forwardHint) < 0 && (secondForwardIdx < 0 || GetRelativeDistance(refHint, secondForwardHint) > 0))
+                        {
+                            secondForwardIdx = i;
+                            secondForwardHint = refHint;
+                        }
+                    }
+
+                    if (secondForwardIdx >= 0)
+                    {
+                        skipModeAllowed = true;
+                        header.SkipModeFrame[0] = (byte)(Av1Constants.LastFrame + Math.Min(forwardIdx, secondForwardIdx));
+                        header.SkipModeFrame[1] = (byte)(Av1Constants.LastFrame + Math.Max(forwardIdx, secondForwardIdx));
+                    }
+                }
+            }
+
+            header.SkipModePresent = skipModeAllowed && ReadFlag();
+        }
+
+        // Section 5.9.24 "Global motion params syntax"
+        private void ReadGlobalMotionParams()
+        {
+            var header = _header;
+            header.GlobalMotion = Av1GlobalMotion.Identity;
+            if (header.FrameIsIntra)
+                return;
+
+            for (var reference = Av1Constants.LastFrame; reference <= Av1Constants.AltrefFrame; reference++)
+            {
+                int type;
+                if (ReadFlag())
+                {
+                    if (ReadFlag())
+                    {
+                        type = Av1Constants.Rotzoom;
+                    }
+                    else
+                    {
+                        type = ReadFlag() ? Av1Constants.Translation : Av1Constants.Affine;
+                    }
+                }
+                else
+                {
+                    type = Av1Constants.Identity;
+                }
+
+                header.GlobalMotion.Types[reference] = (byte)type;
+                if (type >= Av1Constants.Rotzoom)
+                {
+                    ReadGlobalParam(type, reference, 2);
+                    ReadGlobalParam(type, reference, 3);
+                    if (type is Av1Constants.Affine)
+                    {
+                        ReadGlobalParam(type, reference, 4);
+                        ReadGlobalParam(type, reference, 5);
+                    }
+                    else
+                    {
+                        var parameters = header.GlobalMotion.Parameters[reference];
+                        header.GlobalMotion.Parameters.Set(reference, 4, -parameters[3]);
+                        header.GlobalMotion.Parameters.Set(reference, 5, parameters[2]);
+                    }
+                }
+
+                if (type >= Av1Constants.Translation)
+                {
+                    ReadGlobalParam(type, reference, 0);
+                    ReadGlobalParam(type, reference, 1);
+                }
+            }
+        }
+
+        // Section 5.9.25 "Global param syntax"
+        private void ReadGlobalParam(int type, int reference, int index)
+        {
+            var absBits = Av1Constants.GmAbsAlphaBits;
+            var precBits = Av1Constants.GmAlphaPrecBits;
+            if (index < 2)
+            {
+                if (type is Av1Constants.Translation)
+                {
+                    var lowPrecision = _header.AllowHighPrecisionMv ? 0 : 1;
+                    absBits = Av1Constants.GmAbsTransOnlyBits - lowPrecision;
+                    precBits = Av1Constants.GmTransOnlyPrecBits - lowPrecision;
+                }
+                else
+                {
+                    absBits = Av1Constants.GmAbsTransBits;
+                    precBits = Av1Constants.GmTransPrecBits;
+                }
+            }
+
+            var precDiff = Av1Constants.WarpedmodelPrecBits - precBits;
+            var round = index % 3 is 2 ? 1 << Av1Constants.WarpedmodelPrecBits : 0;
+            var sub = index % 3 is 2 ? 1 << precBits : 0;
+            var mx = 1 << absBits;
+            var r = (_previousGlobalMotion.Parameters[reference][index] >> precDiff) - sub;
+            _header.GlobalMotion.Parameters.Set(reference, index, (DecodeSignedSubexpWithRef(-mx, mx + 1, r) << precDiff) + round);
+        }
+
+        // Section 5.9.26 "Decode signed subexp with ref syntax"
+        private int DecodeSignedSubexpWithRef(int low, int high, int r)
+        {
+            var x = DecodeUnsignedSubexpWithRef(high - low, r - low);
+            return x + low;
+        }
+
+        // Section 5.9.27 "Decode unsigned subexp with ref syntax"
+        private int DecodeUnsignedSubexpWithRef(int mx, int r)
+        {
+            var v = DecodeSubexp(mx);
+            if ((r << 1) <= mx)
+                return InverseRecenter(r, v);
+
+            return mx - 1 - InverseRecenter(mx - 1 - r, v);
+        }
+
+        // Section 5.9.28 "Decode subexp syntax"
+        private int DecodeSubexp(int numSyms)
+        {
+            var i = 0;
+            var mk = 0;
+            const int K = 3;
+            while (true)
+            {
+                var b2 = i is not 0 ? K + i - 1 : K;
+                var a = 1 << b2;
+                if (numSyms <= mk + (3 * a))
+                    return _reader.ReadNonSymmetric(numSyms - mk) + mk;
+
+                if (!ReadFlag())
+                    return ReadBits(b2) + mk;
+
+                i++;
+                mk += a;
+            }
+        }
+
         // Section 5.9.29 "Inverse recenter function"
         private static int InverseRecenter(int r, int v)
         {
@@ -624,13 +1165,30 @@ namespace AvifDecoding
         {
             var header = _header;
             var sequence = _sequence;
-            if (!sequence.FilmGrainParamsPresent)
+            if (!sequence.FilmGrainParamsPresent || (!header.ShowFrame && !header.ShowableFrame))
                 return;
 
             if (!ReadFlag())
                 return;
 
             var grainSeed = ReadBits(16);
+            var updateGrain = header.FrameType is not Av1Constants.InterFrame || ReadFlag();
+            if (!updateGrain)
+            {
+                var refIndex = ReadBits(3);
+                var isReference = false;
+                for (var i = 0; i < Av1Constants.RefsPerFrame; i++)
+                {
+                    isReference |= header.RefFrameIdx[i] == refIndex;
+                }
+
+                if (!isReference)
+                    throw Av1Errors.Invalid("the film grain parameters are loaded from a frame that is not a reference of the frame.");
+
+                // load_grain_params: every parameter of the reference frame, including the absence of grain
+                header.FilmGrain = GetSlot(refIndex).Header.FilmGrain?.WithSeed(grainSeed);
+                return;
+            }
 
             var numYPoints = ReadBits(4);
             if (numYPoints > Av1FilmGrainParameters.MaxLumaPoints)

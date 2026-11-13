@@ -16,6 +16,17 @@ namespace AvifDecoding.Tests
             var failures = 0;
             failures += Section("Transform kernels against the reference transform", () => KernelTests.Run(trials: 400));
             failures += Section("Pixels against libavif + dav1d (at most 1 apart per channel)", () => ReferenceTests.Run(images));
+            failures += Section("RGBA against libavif + dav1d", () => FeatureTests.Rgba(images));
+            failures += Section("16-bit RGBA against libavif + dav1d (at most 1 apart in 65535)", () => FeatureTests.SixteenBit(images));
+            failures += Section("Image sequences against libavif + dav1d, frame by frame", () => FeatureTests.Sequences(images));
+            failures += Section("Metadata", () => FeatureTests.Metadata(images));
+            failures += Section("Overlay, identity and grid of derived images against their definitions", () => FeatureTests.Derived(images));
+            failures += Section("Matrices and ranges that avifenc does not write, against their definitions in ITU-T H.273", () => FeatureTests.NonLinear(images));
+            failures += Section("Gain map", () => FeatureTests.GainMap(images));
+            failures += Section("Movie fragments", () => FeatureTests.Fragments(images));
+            failures += Section("Layers of a progressive image", () => FeatureTests.Layers(images));
+            failures += Section("Items built from items, layer selection, thumbnails and depth maps", () => FeatureTests.Container(images));
+            failures += Section("Resource limits", () => FeatureTests.Limits(images));
             failures += Section("Pixels against the recorded hashes", () => HashTests.Run(images, args.Contains("--update-hashes")));
             failures += Section("Malformed and oversized input", () => MalformedInputTests.Run(images));
             failures += Section("Unsupported features", () => UnsupportedTests.Run(images));

@@ -28,6 +28,9 @@ namespace AvifDecoding
         /// <summary><c>ADST_FLIPADST</c>.</summary>
         public const int AdstFlipadst = 7;
 
+        /// <summary><c>AFFINE</c>.</summary>
+        public const int Affine = 3;
+
         /// <summary><c>ALTREF2_FRAME</c>.</summary>
         public const int Altref2Frame = 6;
 
@@ -42,6 +45,9 @@ namespace AvifDecoding
 
         /// <summary><c>BLOCK_128X128</c>.</summary>
         public const int Block128x128 = 15;
+
+        /// <summary><c>BLOCK_32X32</c>.</summary>
+        public const int Block32x32 = 9;
 
         /// <summary><c>BLOCK_4X4</c>.</summary>
         public const int Block4x4 = 0;
@@ -61,11 +67,35 @@ namespace AvifDecoding
         /// <summary><c>BR_CDF_SIZE</c>.</summary>
         public const int BrCdfSize = 4;
 
+        /// <summary><c>BWDREF_FRAME</c>.</summary>
+        public const int BwdrefFrame = 5;
+
+        /// <summary><c>BWD_REFS</c>.</summary>
+        public const int BwdRefs = 3;
+
         /// <summary><c>CLASS0_SIZE</c>.</summary>
         public const int Class0Size = 2;
 
         /// <summary><c>COEFF_BASE_RANGE</c>.</summary>
         public const int CoeffBaseRange = 12;
+
+        /// <summary><c>COMPOUND_AVERAGE</c>.</summary>
+        public const int CompoundAverage = 2;
+
+        /// <summary><c>COMPOUND_DIFFWTD</c>.</summary>
+        public const int CompoundDiffwtd = 1;
+
+        /// <summary><c>COMPOUND_DISTANCE</c>.</summary>
+        public const int CompoundDistance = 4;
+
+        /// <summary><c>COMPOUND_INTRA</c>.</summary>
+        public const int CompoundIntra = 3;
+
+        /// <summary><c>COMPOUND_WEDGE</c>.</summary>
+        public const int CompoundWedge = 0;
+
+        /// <summary><c>COMP_NEWMV_CTXS</c>.</summary>
+        public const int CompNewmvCtxs = 5;
 
         /// <summary><c>CP_BT_709</c>.</summary>
         public const int CpBt709 = 1;
@@ -100,6 +130,12 @@ namespace AvifDecoding
         /// <summary><c>DELTA_Q_SMALL</c>.</summary>
         public const int DeltaQSmall = 3;
 
+        /// <summary><c>DIV_LUT_BITS</c>.</summary>
+        public const int DivLutBits = 8;
+
+        /// <summary><c>DIV_LUT_PREC_BITS</c>.</summary>
+        public const int DivLutPrecBits = 14;
+
         /// <summary><c>EC_MIN_PROB</c>.</summary>
         public const int EcMinProb = 4;
 
@@ -133,11 +169,32 @@ namespace AvifDecoding
         /// <summary><c>FRAME_LF_COUNT</c>.</summary>
         public const int FrameLfCount = 4;
 
+        /// <summary><c>FWD_REFS</c>.</summary>
+        public const int FwdRefs = 4;
+
         /// <summary><c>GLOBALMV</c>.</summary>
         public const int Globalmv = 16;
 
         /// <summary><c>GLOBAL_GLOBALMV</c>.</summary>
         public const int GlobalGlobalmv = 24;
+
+        /// <summary><c>GM_ABS_ALPHA_BITS</c>.</summary>
+        public const int GmAbsAlphaBits = 12;
+
+        /// <summary><c>GM_ABS_TRANS_BITS</c>.</summary>
+        public const int GmAbsTransBits = 12;
+
+        /// <summary><c>GM_ABS_TRANS_ONLY_BITS</c>.</summary>
+        public const int GmAbsTransOnlyBits = 9;
+
+        /// <summary><c>GM_ALPHA_PREC_BITS</c>.</summary>
+        public const int GmAlphaPrecBits = 15;
+
+        /// <summary><c>GM_TRANS_ONLY_PREC_BITS</c>.</summary>
+        public const int GmTransOnlyPrecBits = 3;
+
+        /// <summary><c>GM_TRANS_PREC_BITS</c>.</summary>
+        public const int GmTransPrecBits = 6;
 
         /// <summary><c>GOLDEN_FRAME</c>.</summary>
         public const int GoldenFrame = 4;
@@ -151,11 +208,32 @@ namespace AvifDecoding
         /// <summary><c>H_FLIPADST</c>.</summary>
         public const int HFlipadst = 15;
 
+        /// <summary><c>H_PRED</c>.</summary>
+        public const int HPred = 2;
+
         /// <summary><c>IDENTITY</c>.</summary>
         public const int Identity = 0;
 
         /// <summary><c>IDTX</c>.</summary>
         public const int Idtx = 9;
+
+        /// <summary><c>II_DC_PRED</c>.</summary>
+        public const int IiDcPred = 0;
+
+        /// <summary><c>II_H_PRED</c>.</summary>
+        public const int IiHPred = 2;
+
+        /// <summary><c>II_SMOOTH_PRED</c>.</summary>
+        public const int IiSmoothPred = 3;
+
+        /// <summary><c>II_V_PRED</c>.</summary>
+        public const int IiVPred = 1;
+
+        /// <summary><c>INTERP_FILTERS</c>.</summary>
+        public const int InterpFilters = 3;
+
+        /// <summary><c>INTER_FRAME</c>.</summary>
+        public const int InterFrame = 1;
 
         /// <summary><c>INTRABC_DELAY_PIXELS</c>.</summary>
         public const int IntrabcDelayPixels = 256;
@@ -178,14 +256,50 @@ namespace AvifDecoding
         /// <summary><c>INTRA_MODE_CONTEXTS</c>.</summary>
         public const int IntraModeContexts = 5;
 
+        /// <summary><c>INTRA_ONLY_FRAME</c>.</summary>
+        public const int IntraOnlyFrame = 2;
+
+        /// <summary><c>KEY_FRAME</c>.</summary>
+        public const int KeyFrame = 0;
+
+        /// <summary><c>LAST2_FRAME</c>.</summary>
+        public const int Last2Frame = 2;
+
+        /// <summary><c>LAST3_FRAME</c>.</summary>
+        public const int Last3Frame = 3;
+
+        /// <summary><c>LAST_FRAME</c>.</summary>
+        public const int LastFrame = 1;
+
+        /// <summary><c>LEAST_SQUARES_SAMPLES_MAX</c>.</summary>
+        public const int LeastSquaresSamplesMax = 8;
+
         /// <summary><c>LEVEL_CONTEXTS</c>.</summary>
         public const int LevelContexts = 21;
+
+        /// <summary><c>LOCALWARP</c>.</summary>
+        public const int Localwarp = 2;
+
+        /// <summary><c>LS_MV_MAX</c>.</summary>
+        public const int LsMvMax = 256;
+
+        /// <summary><c>MASK_MASTER_SIZE</c>.</summary>
+        public const int MaskMasterSize = 64;
 
         /// <summary><c>MAX_ANGLE_DELTA</c>.</summary>
         public const int MaxAngleDelta = 3;
 
+        /// <summary><c>MAX_FRAME_DISTANCE</c>.</summary>
+        public const int MaxFrameDistance = 31;
+
         /// <summary><c>MAX_LOOP_FILTER</c>.</summary>
         public const int MaxLoopFilter = 63;
+
+        /// <summary><c>MAX_OFFSET_HEIGHT</c>.</summary>
+        public const int MaxOffsetHeight = 0;
+
+        /// <summary><c>MAX_OFFSET_WIDTH</c>.</summary>
+        public const int MaxOffsetWidth = 8;
 
         /// <summary><c>MAX_REF_MV_STACK_SIZE</c>.</summary>
         public const int MaxRefMvStackSize = 8;
@@ -237,6 +351,9 @@ namespace AvifDecoding
 
         /// <summary><c>MC_UNSPECIFIED</c>.</summary>
         public const int McUnspecified = 2;
+
+        /// <summary><c>MFMV_STACK_SIZE</c>.</summary>
+        public const int MfmvStackSize = 3;
 
         /// <summary><c>MI_SIZE</c>.</summary>
         public const int MiSize = 4;
@@ -297,6 +414,12 @@ namespace AvifDecoding
 
         /// <summary><c>NUM_BASE_LEVELS</c>.</summary>
         public const int NumBaseLevels = 2;
+
+        /// <summary><c>NUM_REF_FRAMES</c>.</summary>
+        public const int NumRefFrames = 8;
+
+        /// <summary><c>OBMC</c>.</summary>
+        public const int Obmc = 1;
 
         /// <summary><c>OBU_FRAME</c>.</summary>
         public const int ObuFrame = 6;
@@ -367,8 +490,17 @@ namespace AvifDecoding
         /// <summary><c>PLANE_TYPES</c>.</summary>
         public const int PlaneTypes = 2;
 
+        /// <summary><c>PRIMARY_REF_NONE</c>.</summary>
+        public const int PrimaryRefNone = 7;
+
         /// <summary><c>QM_TOTAL_SIZE</c>.</summary>
         public const int QmTotalSize = 3344;
+
+        /// <summary><c>REFMVS_LIMIT</c>.</summary>
+        public const int RefmvsLimit = 4095;
+
+        /// <summary><c>REFS_PER_FRAME</c>.</summary>
+        public const int RefsPerFrame = 7;
 
         /// <summary><c>REF_CAT_LEVEL</c>.</summary>
         public const int RefCatLevel = 640;
@@ -388,6 +520,9 @@ namespace AvifDecoding
         /// <summary><c>RESTORE_WIENER</c>.</summary>
         public const int RestoreWiener = 1;
 
+        /// <summary><c>ROTZOOM</c>.</summary>
+        public const int Rotzoom = 2;
+
         /// <summary><c>SCALE_SUBPEL_BITS</c>.</summary>
         public const int ScaleSubpelBits = 10;
 
@@ -396,6 +531,9 @@ namespace AvifDecoding
 
         /// <summary><c>SEG_LVL_ALT_Q</c>.</summary>
         public const int SegLvlAltQ = 0;
+
+        /// <summary><c>SEG_LVL_GLOBALMV</c>.</summary>
+        public const int SegLvlGlobalmv = 7;
 
         /// <summary><c>SEG_LVL_MAX</c>.</summary>
         public const int SegLvlMax = 8;
@@ -438,6 +576,15 @@ namespace AvifDecoding
 
         /// <summary><c>SIG_COEF_CONTEXTS_EOB</c>.</summary>
         public const int SigCoefContextsEob = 4;
+
+        /// <summary><c>SIMPLE</c>.</summary>
+        public const int Simple = 0;
+
+        /// <summary><c>SINGLE_REFERENCE</c>.</summary>
+        public const int SingleReference = 0;
+
+        /// <summary><c>SINGLE_REFS</c>.</summary>
+        public const int SingleRefs = 7;
 
         /// <summary><c>SINPI_1_9</c>.</summary>
         public const int Sinpi19 = 1321;
@@ -490,6 +637,12 @@ namespace AvifDecoding
         /// <summary><c>SUPERRES_SCALE_MASK</c>.</summary>
         public const int SuperresScaleMask = 16383;
 
+        /// <summary><c>SWITCHABLE</c>.</summary>
+        public const int Switchable = 4;
+
+        /// <summary><c>SWITCH_FRAME</c>.</summary>
+        public const int SwitchFrame = 3;
+
         /// <summary><c>TC_SRGB</c>.</summary>
         public const int TcSrgb = 13;
 
@@ -498,6 +651,9 @@ namespace AvifDecoding
 
         /// <summary><c>TOTAL_REFS_PER_FRAME</c>.</summary>
         public const int TotalRefsPerFrame = 8;
+
+        /// <summary><c>TRANSLATION</c>.</summary>
+        public const int Translation = 1;
 
         /// <summary><c>TXB_SKIP_CONTEXTS</c>.</summary>
         public const int TxbSkipContexts = 13;
@@ -601,6 +757,12 @@ namespace AvifDecoding
         /// <summary><c>TX_TYPES</c>.</summary>
         public const int TxTypes = 16;
 
+        /// <summary><c>UNIDIR_COMP_REFERENCE</c>.</summary>
+        public const int UnidirCompReference = 0;
+
+        /// <summary><c>UNIDIR_COMP_REFS</c>.</summary>
+        public const int UnidirCompRefs = 4;
+
         /// <summary><c>UV_CFL_PRED</c>.</summary>
         public const int UvCflPred = 13;
 
@@ -615,6 +777,39 @@ namespace AvifDecoding
 
         /// <summary><c>V_PRED</c>.</summary>
         public const int VPred = 1;
+
+        /// <summary><c>WARPEDDIFF_PREC_BITS</c>.</summary>
+        public const int WarpeddiffPrecBits = 10;
+
+        /// <summary><c>WARPEDMODEL_NONDIAGAFFINE_CLAMP</c>.</summary>
+        public const int WarpedmodelNondiagaffineClamp = 8192;
+
+        /// <summary><c>WARPEDMODEL_PREC_BITS</c>.</summary>
+        public const int WarpedmodelPrecBits = 16;
+
+        /// <summary><c>WARPEDMODEL_TRANS_CLAMP</c>.</summary>
+        public const int WarpedmodelTransClamp = 8388608;
+
+        /// <summary><c>WARPEDPIXEL_PREC_SHIFTS</c>.</summary>
+        public const int WarpedpixelPrecShifts = 64;
+
+        /// <summary><c>WARP_PARAM_REDUCE_BITS</c>.</summary>
+        public const int WarpParamReduceBits = 6;
+
+        /// <summary><c>WEDGE_HORIZONTAL</c>.</summary>
+        public const int WedgeHorizontal = 0;
+
+        /// <summary><c>WEDGE_OBLIQUE117</c>.</summary>
+        public const int WedgeOblique117 = 4;
+
+        /// <summary><c>WEDGE_OBLIQUE27</c>.</summary>
+        public const int WedgeOblique27 = 2;
+
+        /// <summary><c>WEDGE_OBLIQUE63</c>.</summary>
+        public const int WedgeOblique63 = 3;
+
+        /// <summary><c>WEDGE_VERTICAL</c>.</summary>
+        public const int WedgeVertical = 1;
 
         /// <summary><c>WIENER_COEFFS</c>.</summary>
         public const int WienerCoeffs = 3;

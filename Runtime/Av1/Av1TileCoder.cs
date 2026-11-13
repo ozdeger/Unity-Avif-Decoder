@@ -23,7 +23,9 @@ namespace AvifDecoding
         private readonly Av1SymbolDecoder _symbols;
         private readonly Av1TileScratch _scratch;
         private readonly Span<ushort> _cdf;
+        private readonly Av1ReferenceFrames _references;
         private readonly Av1InterScratch? _interScratch;
+        private readonly Span<short> _motionFieldMvs;
         private readonly CancellationToken _cancellationToken;
         private readonly int _miCols;
         private readonly int _miRows;
@@ -45,6 +47,7 @@ namespace AvifDecoding
         private readonly Span<sbyte> _refFrames;
         private readonly Span<short> _mvs;
         private readonly Span<byte> _interInfo;
+        private readonly ReadOnlySpan<byte> _prevSegmentIds;
 
         // The tile being decoded
         private int _miRowStart;
@@ -67,6 +70,7 @@ namespace AvifDecoding
         private bool _availUChroma;
         private bool _availLChroma;
         private bool _skip;
+        private bool _skipMode;
         private bool _isInter;
         private bool _useIntrabc;
         private int _segmentId;
@@ -93,7 +97,23 @@ namespace AvifDecoding
         private int _refFrame1;
         private InlineArray4<int> _mv;
         private InlineArray4<int> _predMv;
+        private int _leftRefFrame0;
+        private int _leftRefFrame1;
+        private int _aboveRefFrame0;
+        private int _aboveRefFrame1;
+        private bool _leftIntra;
+        private bool _aboveIntra;
+        private bool _leftSingle;
+        private bool _aboveSingle;
         private int _refMvIdx;
+        private int _motionMode;
+        private bool _interintra;
+        private int _interintraMode;
+        private bool _wedgeInterintra;
+        private int _wedgeIndex;
+        private int _wedgeSign;
+        private int _maskType;
+        private int _compoundType;
         private int _compGroupIdx;
         private int _compoundIdx;
         private int _interpFilter0;
@@ -102,13 +122,32 @@ namespace AvifDecoding
         // The outputs of the find MV stack process. A motion vector is stored as its row then its column, the vector of the
         // second reference list after the one of the first
         private int _numMvFound;
+        private int _newMvCount;
+        private bool _foundMatch;
+        private int _closeMatches;
+        private int _totalMatches;
+        private int _newMvContext;
+        private int _refMvContext;
+        private int _zeroMvContext;
         private InlineArray4<int> _globalMvs;
         private InlineArray8<InlineArray4<int>> _refStackMv;
         private InlineArray8<int> _weightStack;
+        private InlineArray8<int> _drlCtxStack;
 
-        public Av1TileCoder(Av1FrameBuffer frame, Av1FrameState state, Av1SymbolDecoder symbols, Av1TileScratch scratch, Av1InterScratch? interScratch, Span<ushort> cdf, CancellationToken cancellationToken) :this()
+        // The outputs of the find warp samples process
+        private int _numSamples;
+        private int _numSamplesScanned;
+        private InlineArray8<InlineArray4<int>> _candList;
+
+        // The warp model of the block being decoded (LocalValid, LocalWarpParams and the shears derived from them)
+        private bool _localValid;
+        private InlineArray6<int> _localWarpParams;
+        private InlineArray4<int> _localShear;
+
+        public Av1TileCoder(Av1FrameBuffer frame, Av1FrameState state, Av1SymbolDecoder symbols, Av1TileScratch scratch, Av1ReferenceFrames references, Av1InterScratch? interScratch, Span<ushort> cdf, CancellationToken cancellationToken) :this()
         {
             _frame = frame;
+            _references = references;
             _interScratch = interScratch;
             _sequence = frame.Sequence;
             _header = frame.Header;
@@ -132,12 +171,15 @@ namespace AvifDecoding
             _segmentIds = state.SegmentIds;
             _interTxSizes = state.InterTxSizes;
             _cdefIdx = state.CdefIdx;
-            if (_header.AllowIntrabc)
+            if (!_header.FrameIsIntra || _header.AllowIntrabc)
             {
                 _refFrames = state.RefFrames;
                 _mvs = state.Mvs;
                 _interInfo = state.InterInfo;
             }
+
+            _prevSegmentIds = state.PrevSegmentIds;
+            _motionFieldMvs = _header.UseRefFrameMvs ? state.MotionFieldMvs : default;
         }
 
         /// <summary>
@@ -510,7 +552,7 @@ namespace AvifDecoding
         {
             var width = Math.Min(bw4, _miCols - _miCol);
             var height = Math.Min(bh4, _miRows - _miRow);
-            var flags = (byte)((_skip ? Av1FrameState.SkipFlag : 0) | (_isInter ? Av1FrameState.IsInterFlag : 0) | (0));
+            var flags = (byte)((_skip ? Av1FrameState.SkipFlag : 0) | (_isInter ? Av1FrameState.IsInterFlag : 0) | (_skipMode ? Av1FrameState.SkipModeFlag : 0));
             var paletteSizes = (byte)(_paletteSizeY | (_paletteSizeUv << 4));
             for (var y = 0; y < height; y++)
             {
@@ -585,7 +627,14 @@ namespace AvifDecoding
         // Section 5.11.6 "Mode info syntax"
         private void ModeInfo()
         {
+            if (_header.FrameIsIntra)
+            {
                 IntraFrameModeInfo();
+            }
+            else
+            {
+                InterFrameModeInfo();
+            }
         }
     }
 }

@@ -52,7 +52,14 @@ namespace AvifDecoding
             Span<int> pred,
             int predStride)
         {
+            if (xStep is 1 << Av1Constants.ScaleSubpelBits && yStep is 1 << Av1Constants.ScaleSubpelBits)
+            {
+                PredictBlockUnscaled(reference, referenceStride, lastX, lastY, x, y, w, h, horizontalFilter, verticalFilter, interRound0, interRound1, intermediate, pred, predStride);
+            }
+            else
+            {
                 PredictBlockScalar(reference, referenceStride, lastX, lastY, x, y, xStep, yStep, w, h, horizontalFilter, verticalFilter, interRound0, interRound1, intermediate, pred, predStride);
+            }
         }
 
         /// <summary>The scalar reference of <see cref="PredictBlock"/>.</summary>
@@ -124,6 +131,172 @@ namespace AvifDecoding
             }
         }
 
+        // PredictBlockScalar for a reference of the size of the frame (steps of one sample): every sample of the block uses the
+        // same taps, and the taps of consecutive samples read consecutive samples. The taps of the position 0 of every filter
+        // are 128 on the sample itself and 0 elsewhere: a filter at a whole-sample position is the exact expression of
+        // CenterTap, and a vertical one reads the rows 3 to h + 2 of the intermediate array only
+        private static void PredictBlockUnscaled(
+            ReadOnlySpan<ushort> reference,
+            int referenceStride,
+            int lastX,
+            int lastY,
+            int x,
+            int y,
+            int w,
+            int h,
+            int horizontalFilter,
+            int verticalFilter,
+            int interRound0,
+            int interRound1,
+            Span<int> intermediate,
+            Span<int> pred,
+            int predStride)
+        {
+            var xFraction = (x >> 6) & Av1Constants.SubpelMask;
+            var yFraction = ((y & 1023) >> 6) & Av1Constants.SubpelMask;
+            var column = x >> Av1Constants.ScaleSubpelBits;
+            var top = y >> Av1Constants.ScaleSubpelBits;
+            if (xFraction is 0 && yFraction is 0)
+            {
+                PredictBlockWholeSample(reference, referenceStride, lastX, lastY, column, top, w, h, interRound0, interRound1, pred, predStride);
+                return;
+            }
+
+            var firstRow = yFraction is 0 ? 3 : 0;
+            var intermediateHeight = yFraction is 0 ? h + 3 : h + 7;
+            var filters = Av1Tables.SubpelFilters;
+            var first = column - 3;
+            if (xFraction is 0)
+            {
+                // The sample at first + 3 of each output, which can be inside the reference when the 8 taps are not
+                for (var r = firstRow; r < intermediateHeight; r++)
+                {
+                    var source = reference.Slice(Math.Clamp(top + r - 3, 0, lastY) * referenceStride, lastX + 1);
+                    CenterTapRow(source, column, lastX, interRound0, intermediate.Slice(r * w, w));
+                }
+            }
+            else
+            {
+                var tapsH = filters.Slice((SelectFilter(horizontalFilter, w) * Av1Tables.SubpelFiltersLength1 * Av1Tables.SubpelFiltersLength2) + (xFraction * Av1Tables.SubpelFiltersLength2), 8);
+                int h0 = tapsH[0], h1 = tapsH[1], h2 = tapsH[2], h3 = tapsH[3], h4 = tapsH[4], h5 = tapsH[5], h6 = tapsH[6], h7 = tapsH[7];
+                var round0 = (1 << interRound0) >> 1;
+                var inside = first >= 0 && first + w + 6 <= lastX;
+                for (var r = firstRow; r < intermediateHeight; r++)
+                {
+                    var rowStart = Math.Clamp(top + r - 3, 0, lastY) * referenceStride;
+                    var destination = intermediate.Slice(r * w, w);
+                    if (inside)
+                    {
+                        var window = reference.Slice(rowStart + first, w + 7);
+                        for (var c = 0; c < w; c++)
+                        {
+                            var s = (h0 * window[c]) + (h1 * window[c + 1]) + (h2 * window[c + 2]) + (h3 * window[c + 3])
+                                + (h4 * window[c + 4]) + (h5 * window[c + 5]) + (h6 * window[c + 6]) + (h7 * window[c + 7]);
+                            destination[c] = (s + round0) >> interRound0;
+                        }
+                    }
+                    else
+                    {
+                        var source = reference.Slice(rowStart, lastX + 1);
+                        for (var c = 0; c < w; c++)
+                        {
+                            var s = 0;
+                            for (var t = 0; t < 8; t++)
+                            {
+                                s += tapsH[t] * source[Math.Clamp(first + c + t, 0, lastX)];
+                            }
+
+                            destination[c] = (s + round0) >> interRound0;
+                        }
+                    }
+                }
+            }
+
+            if (yFraction is 0)
+            {
+                for (var r = 0; r < h; r++)
+                {
+                    var row = intermediate.Slice((r + 3) * w, w);
+                    var destination = pred.Slice(r * predStride, w);
+                    for (var c = 0; c < w; c++)
+                    {
+                        destination[c] = CenterTap(row[c], interRound1);
+                    }
+                }
+
+                return;
+            }
+
+            // The rows of the vertical filter start at the row of the block: (y & 1023) is below one sample
+            var tapsV = filters.Slice((SelectFilter(verticalFilter, h) * Av1Tables.SubpelFiltersLength1 * Av1Tables.SubpelFiltersLength2) + (yFraction * Av1Tables.SubpelFiltersLength2), 8);
+            int v0 = tapsV[0], v1 = tapsV[1], v2 = tapsV[2], v3 = tapsV[3], v4 = tapsV[4], v5 = tapsV[5], v6 = tapsV[6], v7 = tapsV[7];
+            var round1 = (1 << interRound1) >> 1;
+            for (var r = 0; r < h; r++)
+            {
+                var rows = intermediate.Slice(r * w, 8 * w);
+                var destination = pred.Slice(r * predStride, w);
+                for (var c = 0; c < w; c++)
+                {
+                    var s = (v0 * rows[c]) + (v1 * rows[w + c]) + (v2 * rows[(2 * w) + c]) + (v3 * rows[(3 * w) + c])
+                        + (v4 * rows[(4 * w) + c]) + (v5 * rows[(5 * w) + c]) + (v6 * rows[(6 * w) + c]) + (v7 * rows[(7 * w) + c]);
+                    destination[c] = (s + round1) >> interRound1;
+                }
+            }
+        }
+
+        // PredictBlockUnscaled at a whole-sample position in both directions: each output is the sample of the reference through
+        // the center taps of the two filters
+        private static void PredictBlockWholeSample(ReadOnlySpan<ushort> reference, int referenceStride, int lastX, int lastY, int column, int row, int w, int h, int interRound0, int interRound1, Span<int> pred, int predStride)
+        {
+            var inside = column >= 0 && column + w - 1 <= lastX;
+            for (var r = 0; r < h; r++)
+            {
+                var rowStart = Math.Clamp(row + r, 0, lastY) * referenceStride;
+                var destination = pred.Slice(r * predStride, w);
+                if (inside)
+                {
+                    var source = reference.Slice(rowStart + column, w);
+                    for (var c = 0; c < w; c++)
+                    {
+                        destination[c] = CenterTap(CenterTap(source[c], interRound0), interRound1);
+                    }
+                }
+                else
+                {
+                    var source = reference.Slice(rowStart, lastX + 1);
+                    for (var c = 0; c < w; c++)
+                    {
+                        destination[c] = CenterTap(CenterTap(source[Math.Clamp(column + c, 0, lastX)], interRound0), interRound1);
+                    }
+                }
+            }
+        }
+
+        // The horizontal filter at a whole-sample position: the samples from column, nearest inside the reference, through the
+        // center tap
+        private static void CenterTapRow(ReadOnlySpan<ushort> source, int column, int lastX, int round, Span<int> destination)
+        {
+            if (column >= 0 && column + destination.Length - 1 <= lastX)
+            {
+                source = source.Slice(column, destination.Length);
+                for (var c = 0; c < destination.Length; c++)
+                {
+                    destination[c] = CenterTap(source[c], round);
+                }
+            }
+            else
+            {
+                for (var c = 0; c < destination.Length; c++)
+                {
+                    destination[c] = CenterTap(source[Math.Clamp(column + c, 0, lastX)], round);
+                }
+            }
+        }
+
+        // ((128 * value) + ((1 << round) >> 1)) >> round, the filter at the position 0 and its rounding, without the product:
+        // 128 * value + 2^(round - 1) is 128 * (value + 2^(round - 8)) when round is above 7, and the rounding term is below
+        // the shifted bits otherwise
+        private static int CenterTap(int value, int round) => round <= 7 ? value << (7 - round) : (value + (1 << (round - 8))) >> (round - 7);
 
         // The 4-tap variants of the filters are used for the blocks of 4 samples or less in the direction of the filter
         private static int SelectFilter(int interpFilter, int size)
@@ -137,6 +310,107 @@ namespace AvifDecoding
                 Av1Constants.EighttapSmooth => 5,
                 _ => interpFilter,
             };
+        }
+
+        /// <summary>
+        /// Predicts the 8x8 section (<paramref name="i8"/>, <paramref name="j8"/>) of a block from a reference plane with a warp
+        /// model, clipped to the size of the block.
+        /// </summary>
+        /// <param name="reference">The samples of the reference plane.</param>
+        /// <param name="referenceStride">The number of samples of a row of <paramref name="reference"/>.</param>
+        /// <param name="lastX">The column of the last sample of the reference plane.</param>
+        /// <param name="lastY">The row of the last sample of the reference plane.</param>
+        /// <param name="warpParams">The 6 parameters of the warp model.</param>
+        /// <param name="shear">The outputs alpha, beta, gamma and delta of the setup shear process for <paramref name="warpParams"/>.</param>
+        /// <param name="x">The column of the block in the plane being predicted.</param>
+        /// <param name="y">The row of the block in the plane being predicted.</param>
+        /// <param name="i8">The row of the section, in units of 8 samples.</param>
+        /// <param name="j8">The column of the section, in units of 8 samples.</param>
+        /// <param name="w">The width of the block.</param>
+        /// <param name="h">The height of the block.</param>
+        /// <param name="subX">The horizontal subsampling of the plane.</param>
+        /// <param name="subY">The vertical subsampling of the plane.</param>
+        /// <param name="interRound0">The number of bits rounded after the horizontal filter.</param>
+        /// <param name="interRound1">The number of bits rounded after the vertical filter.</param>
+        /// <param name="pred">The prediction of the block: <paramref name="h"/> rows of <paramref name="predStride"/> values.</param>
+        /// <param name="predStride">The number of values of a row of <paramref name="pred"/>.</param>
+        public static void WarpBlock(
+            ReadOnlySpan<ushort> reference,
+            int referenceStride,
+            int lastX,
+            int lastY,
+            ReadOnlySpan<int> warpParams,
+            ReadOnlySpan<int> shear,
+            int x,
+            int y,
+            int i8,
+            int j8,
+            int w,
+            int h,
+            int subX,
+            int subY,
+            int interRound0,
+            int interRound1,
+            Span<int> pred,
+            int predStride)
+        {
+            const int PrecisionMask = (1 << Av1Constants.WarpedmodelPrecBits) - 1;
+            long srcX = (x + (j8 * 8) + 4) << subX;
+            long srcY = (y + (i8 * 8) + 4) << subY;
+            var dstX = (warpParams[2] * srcX) + (warpParams[3] * srcY) + warpParams[0];
+            var dstY = (warpParams[4] * srcX) + (warpParams[5] * srcY) + warpParams[1];
+            var x4 = dstX >> subX;
+            var y4 = dstY >> subY;
+            var ix4 = (int)(x4 >> Av1Constants.WarpedmodelPrecBits);
+            var sx4 = (int)(x4 & PrecisionMask);
+            var iy4 = (int)(y4 >> Av1Constants.WarpedmodelPrecBits);
+            var sy4 = (int)(y4 & PrecisionMask);
+            var alpha = shear[0];
+            var beta = shear[1];
+            var gamma = shear[2];
+            var delta = shear[3];
+            var filters = Av1Tables.WarpedFilters;
+            var round0 = (1 << interRound0) >> 1;
+            var round1 = (1 << interRound1) >> 1;
+
+            // 15 rows of 8 values
+            Span<int> intermediate = stackalloc int[15 * 8];
+            for (var i1 = -7; i1 < 8; i1++)
+            {
+                var source = reference.Slice(Math.Clamp(iy4 + i1, 0, lastY) * referenceStride, lastX + 1);
+                for (var i2 = -4; i2 < 4; i2++)
+                {
+                    var sx = sx4 + (alpha * i2) + (beta * i1);
+                    var offs = ((sx + (1 << (Av1Constants.WarpeddiffPrecBits - 1))) >> Av1Constants.WarpeddiffPrecBits) + Av1Constants.WarpedpixelPrecShifts;
+                    var taps = filters.Slice(offs * Av1Tables.WarpedFiltersLength1, 8);
+                    var first = ix4 + i2 - 3;
+                    var s = 0;
+                    for (var i3 = 0; i3 < 8; i3++)
+                    {
+                        s += taps[i3] * source[Math.Clamp(first + i3, 0, lastX)];
+                    }
+
+                    intermediate[((i1 + 7) * 8) + i2 + 4] = (s + round0) >> interRound0;
+                }
+            }
+
+            for (var i1 = -4; i1 < Math.Min(4, h - (i8 * 8) - 4); i1++)
+            {
+                var destination = pred[((((i8 * 8) + i1 + 4) * predStride) + (j8 * 8))..];
+                for (var i2 = -4; i2 < Math.Min(4, w - (j8 * 8) - 4); i2++)
+                {
+                    var sy = sy4 + (gamma * i2) + (delta * i1);
+                    var offs = ((sy + (1 << (Av1Constants.WarpeddiffPrecBits - 1))) >> Av1Constants.WarpeddiffPrecBits) + Av1Constants.WarpedpixelPrecShifts;
+                    var taps = filters.Slice(offs * Av1Tables.WarpedFiltersLength1, 8);
+                    var s = 0;
+                    for (var i3 = 0; i3 < 8; i3++)
+                    {
+                        s += taps[i3] * intermediate[((i1 + i3 + 4) * 8) + i2 + 4];
+                    }
+
+                    destination[i2 + 4] = (s + round1) >> interRound1;
+                }
+            }
         }
     }
 }

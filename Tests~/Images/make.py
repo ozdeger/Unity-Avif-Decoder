@@ -7,6 +7,9 @@ import os, shutil, struct, subprocess, sys, tempfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import extras
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 MUX = os.path.join(HERE, "mux.py")
 # Files that the decoder must refuse with an UnsupportedImageFeatureException
@@ -62,6 +65,19 @@ def screen(w, h):
     return im
 
 
+# Copies an avifenc 2x2 grid with its output size changed: the grid item data (version 0, 16-bit sizes) and the grid's
+# 'ispe' are rewritten in place, so no offset moves
+def crop_grid(src_path, dst_path, old, new):
+    data = bytearray(open(src_path, "rb").read())
+    grid = [i for i in range(len(data)) if data[i:i + 8] == bytes([0, 0, 1, 1]) + struct.pack(">HH", *old)]
+    assert len(grid) == 1
+    data[grid[0] + 4:grid[0] + 8] = struct.pack(">HH", *new)
+    ispe = [i + 4 for i in range(len(data)) if data[i:i + 4] == b"ispe" and data[i + 8:i + 16] == struct.pack(">II", *old)]
+    assert len(ispe) == 1
+    data[ispe[0] + 4:ispe[0] + 12] = struct.pack(">II", *new)
+    open(dst_path, "wb").write(data)
+
+
 # The body of the top-level mdat box, which holds the one item of an avifenc file
 def mdat_payload(path):
     data = open(path, "rb").read()
@@ -84,7 +100,8 @@ def main():
     for name in os.listdir(HERE):
         if name.endswith((".avif", ".png")):
             os.remove(os.path.join(HERE, name))
-    shutil.rmtree(UNSUPPORTED, ignore_errors=True)
+    for folder in (UNSUPPORTED, *(os.path.join(HERE, name) for name in ("16bit", "sequences", "metadata", "derived", "nonlinear", "gainmap", "fragments", "container", "limits"))):
+        shutil.rmtree(folder, ignore_errors=True)
     os.makedirs(UNSUPPORTED)
 
     tmp = tempfile.mkdtemp()
@@ -100,6 +117,7 @@ def main():
     photo(512, 384, 5).save(src("photo512x384"))
     photo(2048, 2048, 6).save(src("photo2048"))
     photo(2050, 2049, 7).save(src("photo2050"))
+    photo(195, 130, 8).save(src("photo195x130"))
     screen(256, 256).save(src("screen256"))
     for w, h in ((1, 1), (2, 3), (17, 9), (65, 33), (7, 130)):
         p256.resize((w, h), Image.LANCZOS).save(src(f"tiny{w}x{h}"))
@@ -123,6 +141,9 @@ def main():
         "bt601": ["--cicp", "1/13/6", "-q", "60", src("photo256")],
         "bt2020": ["--cicp", "9/16/9", "-d", "10", "-q", "60", src("photo256")],
         "identity": ["-y", "444", "--cicp", "1/13/0", "-q", "70", src("photo256")],
+        # Matrix coefficients 12, with weights derived from the primaries: Display P3, and BT.2020 in 10-bit 4:4:4
+        "chroma_derived_p3": ["--cicp", "12/13/12", "-q", "60", src("photo256")],
+        "chroma_derived_bt2020": ["-d", "10", "-y", "444", "--cicp", "9/16/12", "-q", "60", src("photo256")],
         "lossless": ["-l", "-s", "8", src("photo256")],
         # Coding tools
         "tiles": ["-s", "6", "--tilerowslog2", "2", "--tilecolslog2", "2", "-q", "50", src("photo512")],
@@ -156,9 +177,15 @@ def main():
         "imir1": ["--imir", "1", "-q", "60", src("photo512x384")],
         "clap": ["--crop", "64,32,320,240", "-q", "60", src("photo512x384")],
         "clap_irot1_imir0": ["--crop", "64,32,320,240", "--irot", "1", "--imir", "0", "-q", "60", src("photo512x384")],
+        # Grid images: 4:2:0 tiles of 256 x 192, and 4:4:4 tiles of an odd size, 65 x 65
+        "grid2x2_420": ["-y", "420", "-g", "2x2", "-q", "60", src("photo512x384")],
+        "grid3x2_444": ["-y", "444", "-g", "3x2", "-q", "60", src("photo195x130")],
     }
     for name, args in cases.items():
         run("avifenc", "-j", "4", *args, os.path.join(HERE, name + ".avif"))
+
+    # The 4:2:0 grid with a smaller output, which crops the last column and row of tiles
+    crop_grid(os.path.join(HERE, "grid2x2_420.avif"), os.path.join(HERE, "grid2x2_crop.avif"), (512, 384), (500, 380))
 
     # Super-resolution is not reachable through avifenc's still-image path: encode one key frame with aomenc and wrap it
     y4m = os.path.join(tmp, "photo256.y4m")
@@ -169,14 +196,15 @@ def main():
     run(sys.executable, MUX, obu, os.path.join(HERE, "superres.avif"), "256", "256")
 
     # A layered image: the base layer is a key frame at half size, the second layer an inter frame predicted from it. The
-    # same stream with an a1op property that selects operating point 1, the base layer alone, decodes
-    progressive = os.path.join(UNSUPPORTED, "progressive.avif")
+    # same stream with an a1op property that selects operating point 1 is the base layer alone
+    progressive = os.path.join(HERE, "progressive.avif")
     run("avifenc", "-j", "4", "--progressive", "-y", "420", "-q", "60", src("photo256"), progressive)
     obu = os.path.join(tmp, "progressive.obu")
     with open(obu, "wb") as f:
         f.write(mdat_payload(progressive))
     run(sys.executable, MUX, obu, os.path.join(HERE, "a1op_base.avif"), "128", "128", "8", "1")
 
+    extras.build(HERE, tmp, photo)
     shutil.rmtree(tmp)
 
     # The references: libavif with dav1d, 8-bit RGB, with the crop, rotation and mirroring applied. The two big files have
@@ -186,6 +214,7 @@ def main():
             path = os.path.join(HERE, name)
             run("avifdec", "-d", "8", "--png-compress", "9", path, path[:-5] + ".png")
 
+    extras.references_16bit(HERE)
 
 if __name__ == "__main__":
     main()

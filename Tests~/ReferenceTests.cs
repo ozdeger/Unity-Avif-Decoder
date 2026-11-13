@@ -16,6 +16,10 @@ namespace AvifDecoding.Tests
                 if (!File.Exists(png))
                     continue;
 
+                // Images with alpha are compared as RGBA by FeatureTests.Rgba: this check reads the colour as it is coded
+                if (Png.ReadRgba(png).HasAlpha)
+                    continue;
+
                 var name = Path.GetFileName(file);
                 var (width, height, expected) = Png.ReadRgb(png);
                 AvifRgbImage image;

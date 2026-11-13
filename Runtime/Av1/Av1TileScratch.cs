@@ -36,6 +36,9 @@ namespace AvifDecoding
         private Av1PooledArray<byte>? _aboveSegPredContext;
         private int _aboveMiCols = -1;
 
+        // RefIdMvs, RefDiffMvs (2 lists of 2 motion vectors each), RefIdCount and RefDiffCount of the extra search process
+        private readonly int[] _extraSearch = new int[20];
+
         public Av1TileScratch(AllocationScope scope)
         {
             _coefficients = Av1PooledArray<int>.Rent(scope, QuantLength + TransformLength + CflLength + DequantLength + CoefficientListLength);
@@ -70,6 +73,9 @@ namespace AvifDecoding
         private static int TxTypesLength => SuperblockSize4 * SuperblockSize4;
 
         private static int LevelMapLength => (32 + LevelMapPadding) * (32 + LevelMapPadding);
+
+        /// <summary>Gets the variables of the extra search process: RefIdMvs, RefDiffMvs, RefIdCount and RefDiffCount.</summary>
+        public Span<int> ExtraSearch => _extraSearch;
 
         /// <summary>Gets <c>Quant</c>: the coefficients of the transform block being read, Min(32, width) per row.</summary>
         public Span<int> Quant => _coefficients.Span[..QuantLength];

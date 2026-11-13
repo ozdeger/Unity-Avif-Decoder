@@ -38,6 +38,12 @@ namespace AvifDecoding
             1, 2, 1, 2, 4, 2, 4, 8, 4, 8, 16, 8, 16, 32, 16, 32, 4, 1, 8, 2, 16, 4,
         };
 
+        /// <summary>Gets <c>Size_Group[ BLOCK_SIZES ]</c> (section "Conversion tables").</summary>
+        public static ReadOnlySpan<byte> SizeGroup =>
+        new byte[] {
+            0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 0, 0, 1, 1, 2, 2,
+        };
+
         /// <summary>Gets <c>Max_Tx_Size_Rect[ BLOCK_SIZES ]</c> (section "Conversion tables").</summary>
         public static ReadOnlySpan<byte> MaxTxSizeRect =>
         new byte[] {
@@ -209,6 +215,12 @@ namespace AvifDecoding
         public static ReadOnlySpan<byte> TxHeightLog2 =>
         new byte[] {
             2, 3, 4, 5, 6, 3, 2, 4, 3, 5, 4, 6, 5, 4, 2, 5, 3, 6, 4,
+        };
+
+        /// <summary>Gets <c>Wedge_Bits[ BLOCK_SIZES ]</c> (section "Conversion tables").</summary>
+        public static ReadOnlySpan<byte> WedgeBits =>
+        new byte[] {
+            0, 0, 0, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0,
         };
 
         /// <summary>Gets <c>Adjusted_Tx_Size[ TX_SIZES_ALL ]</c> (section "Conversion tables").</summary>

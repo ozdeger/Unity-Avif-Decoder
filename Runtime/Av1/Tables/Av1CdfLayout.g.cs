@@ -29,6 +29,9 @@ namespace AvifDecoding
         /// <summary>The offset of the YMode distributions (56 entries).</summary>
         public const int YMode = 350;
 
+        /// <summary>The number of entries of one YMode distribution.</summary>
+        public const int YModeSize = 14;
+
         /// <summary>The offset of the UvModeCflNotAllowed distributions (182 entries).</summary>
         public const int UvModeCflNotAllowed = 406;
 
@@ -134,11 +137,20 @@ namespace AvifDecoding
         /// <summary>The offset of the SegmentIdPredicted distributions (9 entries).</summary>
         public const int SegmentIdPredicted = 1245;
 
+        /// <summary>The number of entries of one SegmentIdPredicted distribution.</summary>
+        public const int SegmentIdPredictedSize = 3;
+
         /// <summary>The offset of the MvClass0Hp distributions (12 entries, 4 copies of 3 entries).</summary>
         public const int MvClass0Hp = 1254;
 
+        /// <summary>The number of entries of one MvClass0Hp distribution.</summary>
+        public const int MvClass0HpSize = 3;
+
         /// <summary>The offset of the MvHp distributions (12 entries, 4 copies of 3 entries).</summary>
         public const int MvHp = 1266;
+
+        /// <summary>The number of entries of one MvHp distribution.</summary>
+        public const int MvHpSize = 3;
 
         /// <summary>The offset of the MvSign distributions (12 entries, 4 copies of 3 entries).</summary>
         public const int MvSign = 1278;
@@ -161,23 +173,44 @@ namespace AvifDecoding
         /// <summary>The offset of the NewMv distributions (18 entries).</summary>
         public const int NewMv = 1422;
 
+        /// <summary>The number of entries of one NewMv distribution.</summary>
+        public const int NewMvSize = 3;
+
         /// <summary>The offset of the ZeroMv distributions (6 entries).</summary>
         public const int ZeroMv = 1440;
+
+        /// <summary>The number of entries of one ZeroMv distribution.</summary>
+        public const int ZeroMvSize = 3;
 
         /// <summary>The offset of the RefMv distributions (18 entries).</summary>
         public const int RefMv = 1446;
 
+        /// <summary>The number of entries of one RefMv distribution.</summary>
+        public const int RefMvSize = 3;
+
         /// <summary>The offset of the DrlMode distributions (9 entries).</summary>
         public const int DrlMode = 1464;
+
+        /// <summary>The number of entries of one DrlMode distribution.</summary>
+        public const int DrlModeSize = 3;
 
         /// <summary>The offset of the IsInter distributions (12 entries).</summary>
         public const int IsInter = 1473;
 
+        /// <summary>The number of entries of one IsInter distribution.</summary>
+        public const int IsInterSize = 3;
+
         /// <summary>The offset of the CompMode distributions (15 entries).</summary>
         public const int CompMode = 1485;
 
+        /// <summary>The number of entries of one CompMode distribution.</summary>
+        public const int CompModeSize = 3;
+
         /// <summary>The offset of the SkipMode distributions (9 entries).</summary>
         public const int SkipMode = 1500;
+
+        /// <summary>The number of entries of one SkipMode distribution.</summary>
+        public const int SkipModeSize = 3;
 
         /// <summary>The offset of the Skip distributions (9 entries).</summary>
         public const int Skip = 1509;
@@ -188,20 +221,38 @@ namespace AvifDecoding
         /// <summary>The offset of the CompRef distributions (27 entries).</summary>
         public const int CompRef = 1518;
 
+        /// <summary>The number of entries of one CompRef distribution.</summary>
+        public const int CompRefSize = 3;
+
         /// <summary>The offset of the CompBwdRef distributions (18 entries).</summary>
         public const int CompBwdRef = 1545;
+
+        /// <summary>The number of entries of one CompBwdRef distribution.</summary>
+        public const int CompBwdRefSize = 3;
 
         /// <summary>The offset of the SingleRef distributions (54 entries).</summary>
         public const int SingleRef = 1563;
 
+        /// <summary>The number of entries of one SingleRef distribution.</summary>
+        public const int SingleRefSize = 3;
+
         /// <summary>The offset of the CompoundMode distributions (72 entries).</summary>
         public const int CompoundMode = 1617;
+
+        /// <summary>The number of entries of one CompoundMode distribution.</summary>
+        public const int CompoundModeSize = 9;
 
         /// <summary>The offset of the InterpFilter distributions (64 entries).</summary>
         public const int InterpFilter = 1689;
 
+        /// <summary>The number of entries of one InterpFilter distribution.</summary>
+        public const int InterpFilterSize = 4;
+
         /// <summary>The offset of the MotionMode distributions (88 entries).</summary>
         public const int MotionMode = 1753;
+
+        /// <summary>The number of entries of one MotionMode distribution.</summary>
+        public const int MotionModeSize = 4;
 
         /// <summary>The offset of the MvJoint distributions (10 entries, 2 copies of 5 entries).</summary>
         public const int MvJoint = 1841;
@@ -344,32 +395,62 @@ namespace AvifDecoding
         /// <summary>The offset of the CompoundIdx distributions (18 entries).</summary>
         public const int CompoundIdx = 3091;
 
+        /// <summary>The number of entries of one CompoundIdx distribution.</summary>
+        public const int CompoundIdxSize = 3;
+
         /// <summary>The offset of the CompGroupIdx distributions (18 entries).</summary>
         public const int CompGroupIdx = 3109;
+
+        /// <summary>The number of entries of one CompGroupIdx distribution.</summary>
+        public const int CompGroupIdxSize = 3;
 
         /// <summary>The offset of the CompoundType distributions (66 entries).</summary>
         public const int CompoundType = 3127;
 
+        /// <summary>The number of entries of one CompoundType distribution.</summary>
+        public const int CompoundTypeSize = 3;
+
         /// <summary>The offset of the InterIntra distributions (9 entries).</summary>
         public const int InterIntra = 3193;
+
+        /// <summary>The number of entries of one InterIntra distribution.</summary>
+        public const int InterIntraSize = 3;
 
         /// <summary>The offset of the InterIntraMode distributions (15 entries).</summary>
         public const int InterIntraMode = 3202;
 
+        /// <summary>The number of entries of one InterIntraMode distribution.</summary>
+        public const int InterIntraModeSize = 5;
+
         /// <summary>The offset of the WedgeIndex distributions (374 entries).</summary>
         public const int WedgeIndex = 3217;
+
+        /// <summary>The number of entries of one WedgeIndex distribution.</summary>
+        public const int WedgeIndexSize = 17;
 
         /// <summary>The offset of the WedgeInterIntra distributions (66 entries).</summary>
         public const int WedgeInterIntra = 3591;
 
+        /// <summary>The number of entries of one WedgeInterIntra distribution.</summary>
+        public const int WedgeInterIntraSize = 3;
+
         /// <summary>The offset of the UseObmc distributions (66 entries).</summary>
         public const int UseObmc = 3657;
+
+        /// <summary>The number of entries of one UseObmc distribution.</summary>
+        public const int UseObmcSize = 3;
 
         /// <summary>The offset of the CompRefType distributions (15 entries).</summary>
         public const int CompRefType = 3723;
 
+        /// <summary>The number of entries of one CompRefType distribution.</summary>
+        public const int CompRefTypeSize = 3;
+
         /// <summary>The offset of the UniCompRef distributions (27 entries).</summary>
         public const int UniCompRef = 3738;
+
+        /// <summary>The number of entries of one UniCompRef distribution.</summary>
+        public const int UniCompRefSize = 3;
 
         /// <summary>The offset of the CflSign distributions (9 entries).</summary>
         public const int CflSign = 3765;

@@ -49,7 +49,7 @@ namespace AvifDecoding
             _yModes = state.YModes;
             _flags = state.Flags;
             _segmentIds = state.SegmentIds;
-            _refFrames = default;
+            _refFrames = _header.FrameIsIntra ? default : state.RefFrames;
             _deltaLfs = _header.DeltaLfPresent ? state.DeltaLfs : default;
             _miCols = _header.MiCols;
             _bitDepth = _sequence.BitDepth;

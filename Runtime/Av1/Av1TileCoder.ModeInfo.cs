@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+
 namespace AvifDecoding
 {
     /// <content>The mode info of a block (AV1 specification, sections 5.11.7 to 5.11.17, 5.11.24 and 5.11.42 to 5.11.46).</content>
@@ -14,6 +15,7 @@ namespace AvifDecoding
             if (_header.SegIdPreSkip)
                 IntraSegmentId();
 
+            _skipMode = false;
             ReadSkip();
             if (!_header.SegIdPreSkip)
                 IntraSegmentId();
@@ -25,6 +27,9 @@ namespace AvifDecoding
             _useIntrabc = _header.AllowIntrabc && ReadSymbol(Av1CdfLayout.Intrabc, Av1CdfLayout.IntrabcSize) is not 0;
             _refFrame0 = Av1Constants.IntraFrame;
             _refFrame1 = NoReference;
+            _interintra = false;
+            _motionMode = Av1Constants.Simple;
+            _compoundType = Av1Constants.CompoundAverage;
             _compGroupIdx = 0;
             _compoundIdx = 0;
             if (_useIntrabc)
@@ -39,7 +44,7 @@ namespace AvifDecoding
                 _angleDeltaUv = 0;
                 _interpFilter0 = Av1Constants.Bilinear;
                 _interpFilter1 = Av1Constants.Bilinear;
-                FindMvStack();
+                FindMvStack(isCompound: false);
                 AssignMv(isCompound: false);
                 return;
             }

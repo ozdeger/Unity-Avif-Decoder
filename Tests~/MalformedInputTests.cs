@@ -19,7 +19,8 @@ namespace AvifDecoding.Tests
 
             var rng = new Random(42);
             int decoded = 0, rejected = 0;
-            foreach (var name in new[] { "photo320_q40", "screen_ibc", "d10_444", "tiles", "grain7", "superres", "clap_irot1_imir0", "tiny17x9_422" })
+            foreach (var name in new[] { "photo320_q40", "screen_ibc", "d10_444", "tiles", "grain7", "superres", "clap_irot1_imir0", "tiny17x9_422", "grid2x2_crop",
+                "alpha_grid", "alpha_premultiplied", "sequences/keyframes_alpha", "metadata/metadata", "derived/overlay", "derived/grid_of_identities", "nonlinear/ictcp_pq", "sequences/inter_alpha_10bit", "progressive", "layered2", "fragments/fragmented" })
             {
                 var source = File.ReadAllBytes(Path.Combine(images, name + ".avif"));
                 for (var k = 0; k < VariantsPerFile; k++)
@@ -28,7 +29,11 @@ namespace AvifDecoding.Tests
                     var stopwatch = Stopwatch.StartNew();
                     try
                     {
+                        // The legacy call, then every other entry point on the same bytes
                         AvifImageDecoder.Decode(bytes);
+                        AvifImageDecoder.DecodeImage(bytes, new AvifDecodeOptions { PixelFormat = AvifPixelFormat.Rgba64 });
+                        AvifImageDecoder.Identify(bytes);
+                        AvifImageDecoder.DecodeFrames(bytes);
                         decoded++;
                     }
                     catch (ImageDecodeException)

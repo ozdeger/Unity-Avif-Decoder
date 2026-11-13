@@ -1,29 +1,40 @@
 #nullable enable
-using System.Collections.Generic;
-using System.Threading;
 using System;
 
 namespace AvifDecoding
 {
-    // The transformative properties of the primary item, in the order HEIF applies them: the clean aperture (clap), the
-    // rotation (irot), then the mirroring (imir)
+    // The transformative properties of an image, in the order HEIF applies them: the clean aperture (clap), the rotation
+    // (irot), then the mirroring (imir)
     internal static class AvifImageTransforms
     {
-        public static AvifRgbImage Apply(AvifRgbImage image, AvifContainer container)
+        public static AvifImage Apply(AvifImage image, AvifImageNode node)
         {
-            if (container.HasCleanAperture && TryGetCrop(container.Crop, image.Width, image.Height, out var x, out var y, out var width, out var height))
+            if (node.HasCleanAperture && TryGetCrop(node.Crop, image.Width, image.Height, out var x, out var y, out var width, out var height))
                 image = Crop(image, x, y, width, height);
 
-            for (var i = 0; i < container.Rotation; i++)
+            for (var i = 0; i < node.Rotation; i++)
                 image = RotateAnticlockwise(image);
 
             // imir 0 exchanges the top and bottom of the image, 1 its left and right (HEIF 6.5.12, and libavif)
-            if (container.MirrorAxis == 0)
+            if (node.MirrorAxis == 0)
                 image = MirrorTopBottom(image);
-            else if (container.MirrorAxis == 1)
+            else if (node.MirrorAxis == 1)
                 image = MirrorLeftRight(image);
 
             return image;
+        }
+
+        // The size of an image of a size once its transformative properties apply
+        public static void GetTransformedSize(AvifImageNode node, int width, int height, out int outWidth, out int outHeight)
+        {
+            if (node.HasCleanAperture && TryGetCrop(node.Crop, width, height, out _, out _, out var cropWidth, out var cropHeight))
+            {
+                width = cropWidth;
+                height = cropHeight;
+            }
+
+            outWidth = (node.Rotation & 1) != 0 ? height : width;
+            outHeight = (node.Rotation & 1) != 0 ? width : height;
         }
 
         // A clean aperture whose size and position are not whole pixels inside the image is ignored: the image is shown uncropped
@@ -51,61 +62,89 @@ namespace AvifDecoding
             return x >= 0 && y >= 0 && x + width <= imageWidth && y + height <= imageHeight;
         }
 
-        private static AvifRgbImage Crop(AvifRgbImage image, int x, int y, int width, int height)
+        private static AvifImage Crop(AvifImage image, int x, int y, int width, int height)
         {
-            var pixels = new byte[width * height * 3];
+            var result = AvifImage.Create(width, height, image.PixelFormat);
+            var channels = image.Channels;
+            if (AvifImage.IsSixteenBit(image.PixelFormat))
+                CropSamples(image.Pixels16, image.Width, result.Pixels16, x, y, width, height, channels);
+            else
+                CropSamples(image.Pixels, image.Width, result.Pixels, x, y, width, height, channels);
+
+            return result;
+        }
+
+        private static AvifImage RotateAnticlockwise(AvifImage image)
+        {
+            var result = AvifImage.Create(image.Height, image.Width, image.PixelFormat);
+            if (AvifImage.IsSixteenBit(image.PixelFormat))
+                RotateSamples(image.Pixels16, image.Width, image.Height, result.Pixels16, image.Channels);
+            else
+                RotateSamples(image.Pixels, image.Width, image.Height, result.Pixels, image.Channels);
+
+            return result;
+        }
+
+        private static AvifImage MirrorLeftRight(AvifImage image)
+        {
+            var result = AvifImage.Create(image.Width, image.Height, image.PixelFormat);
+            if (AvifImage.IsSixteenBit(image.PixelFormat))
+                MirrorSamples(image.Pixels16, image.Width, image.Height, result.Pixels16, image.Channels);
+            else
+                MirrorSamples(image.Pixels, image.Width, image.Height, result.Pixels, image.Channels);
+
+            return result;
+        }
+
+        private static AvifImage MirrorTopBottom(AvifImage image)
+        {
+            var result = AvifImage.Create(image.Width, image.Height, image.PixelFormat);
+            var rowLength = image.Width * image.Channels;
+            for (var row = 0; row < image.Height; row++)
+            {
+                var target = (image.Height - 1 - row) * rowLength;
+                if (AvifImage.IsSixteenBit(image.PixelFormat))
+                    Array.Copy(image.Pixels16, row * rowLength, result.Pixels16, target, rowLength);
+                else
+                    Array.Copy(image.Pixels, row * rowLength, result.Pixels, target, rowLength);
+            }
+
+            return result;
+        }
+
+        private static void CropSamples<T>(T[] source, int sourceWidth, T[] target, int x, int y, int width, int height, int channels)
+        {
             for (var row = 0; row < height; row++)
-                Buffer.BlockCopy(image.Pixels, (((y + row) * image.Width) + x) * 3, pixels, row * width * 3, width * 3);
-
-            return new AvifRgbImage(width, height, pixels);
+                Array.Copy(source, (((y + row) * sourceWidth) + x) * channels, target, row * width * channels, width * channels);
         }
 
-        private static AvifRgbImage RotateAnticlockwise(AvifRgbImage image)
+        private static void RotateSamples<T>(T[] source, int sourceWidth, int sourceHeight, T[] target, int channels)
         {
-            var width = image.Height;
-            var height = image.Width;
-            var pixels = new byte[image.Pixels.Length];
-            for (var row = 0; row < image.Height; row++)
+            var width = sourceHeight;
+            for (var row = 0; row < sourceHeight; row++)
             {
-                for (var column = 0; column < image.Width; column++)
+                for (var column = 0; column < sourceWidth; column++)
                 {
-                    var source = ((row * image.Width) + column) * 3;
-                    var target = ((((image.Width - 1 - column) * width) + row)) * 3;
-                    pixels[target] = image.Pixels[source];
-                    pixels[target + 1] = image.Pixels[source + 1];
-                    pixels[target + 2] = image.Pixels[source + 2];
+                    var from = ((row * sourceWidth) + column) * channels;
+                    var to = (((sourceWidth - 1 - column) * width) + row) * channels;
+                    for (var c = 0; c < channels; c++)
+                        target[to + c] = source[from + c];
                 }
             }
-
-            return new AvifRgbImage(width, height, pixels);
         }
 
-        private static AvifRgbImage MirrorLeftRight(AvifRgbImage image)
+        private static void MirrorSamples<T>(T[] source, int width, int height, T[] target, int channels)
         {
-            var pixels = new byte[image.Pixels.Length];
-            for (var row = 0; row < image.Height; row++)
+            for (var row = 0; row < height; row++)
             {
-                for (var column = 0; column < image.Width; column++)
+                for (var column = 0; column < width; column++)
                 {
-                    var source = ((row * image.Width) + column) * 3;
-                    var target = ((row * image.Width) + (image.Width - 1 - column)) * 3;
-                    pixels[target] = image.Pixels[source];
-                    pixels[target + 1] = image.Pixels[source + 1];
-                    pixels[target + 2] = image.Pixels[source + 2];
+                    var from = ((row * width) + column) * channels;
+                    var to = ((row * width) + (width - 1 - column)) * channels;
+                    for (var c = 0; c < channels; c++)
+                        target[to + c] = source[from + c];
                 }
             }
-
-            return new AvifRgbImage(image.Width, image.Height, pixels);
-        }
-
-        private static AvifRgbImage MirrorTopBottom(AvifRgbImage image)
-        {
-            var pixels = new byte[image.Pixels.Length];
-            var rowLength = image.Width * 3;
-            for (var row = 0; row < image.Height; row++)
-                Buffer.BlockCopy(image.Pixels, row * rowLength, pixels, (image.Height - 1 - row) * rowLength, rowLength);
-
-            return new AvifRgbImage(image.Width, image.Height, pixels);
         }
     }
 }

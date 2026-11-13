@@ -58,7 +58,14 @@ namespace AvifDecoding
         /// </summary>
         public int MaxSpatialLayer { get; set; } = Av1ObuHeader.MaxSpatialId;
 
-        /// <summary>Gets the coding tools used by the blocks decoded so far: a diagnostic.</summary>
+        /// <summary>
+        /// Gets or sets whether every shown frame of the operating point is output, whatever its spatial layer: the output of a
+        /// conformance test. Otherwise a temporal unit outputs the frame of its highest spatial layer only.
+        /// </summary>
+        public bool OutputAllLayers { get; set; }
+
+        /// <summary>Gets the spatial layer of the frame that <see cref="DecodeNextOutputFrame"/> returned last.</summary>
+        public int OutputSpatialId { get; private set; }
 
         /// <summary>Gets the active sequence header, or <see langword="null"/> before the first one is decoded.</summary>
         public Av1SequenceHeader? Sequence => _sequence;
@@ -154,8 +161,9 @@ namespace AvifDecoding
                 if (output is null)
                     continue;
 
-                if (DecodedSpatialLayerCount <= 1)
+                if (OutputAllLayers || DecodedSpatialLayerCount <= 1)
                 {
+                    OutputSpatialId = obu.SpatialId;
                     return output;
                 }
 
@@ -190,7 +198,7 @@ namespace AvifDecoding
             var output = _heldOutput;
             _heldOutput = null;
             if (output is not null)
-                {}
+                OutputSpatialId = _heldSpatialId;
 
             return output;
         }
@@ -205,6 +213,8 @@ namespace AvifDecoding
                 if (_seenFrameHeader)
                     throw Av1Errors.Invalid("a sequence header starts a new sequence before the tiles of the frame are complete.");
 
+                // A new coded video sequence does not refer to the frames of the previous one
+                _coding.ReleaseSlots();
             }
 
             _sequence = sequence;
@@ -216,7 +226,15 @@ namespace AvifDecoding
             var sequence = _sequence ?? throw Av1Errors.Invalid("a frame header has no sequence header.");
             var payload = _data.AsSpan(payloadOffset, obu.PayloadLength);
             var reader = new Av1BitReader(payload);
-            var header = Av1FrameHeaderParser.Parse(ref reader, sequence, obu);
+            var header = Av1FrameHeaderParser.Parse(ref reader, sequence, obu, _coding.Slots, _coding.RefValid);
+            if (header.ShowExistingFrame)
+            {
+                if (isFrameObu)
+                    throw Av1Errors.Invalid("a frame OBU shows an existing frame.");
+
+                reader.ReadTrailingBits();
+                return ShowExistingFrame(header);
+            }
 
             BeginFrame(sequence, header);
             _seenFrameHeader = true;
@@ -233,6 +251,22 @@ namespace AvifDecoding
                 throw Av1Errors.Truncated();
 
             return ReadTileGroup(payloadOffset + headerBytes, obu.PayloadLength - headerBytes, isFrameObu: true, cancellationToken);
+        }
+
+        private Av1FrameBuffer ShowExistingFrame(Av1FrameHeader header)
+        {
+            var frame = _coding.Slots[header.FrameToShowMapIdx] ?? throw Av1Errors.Invalid("a frame refers to an empty reference slot.");
+            if (header.FrameType is Av1Constants.KeyFrame)
+            {
+                // Section 7.21 "Reference frame loading process", then the reference frame update process with every slot
+                for (var i = 0; i < Av1Constants.NumRefFrames; i++)
+                {
+                    _coding.SetSlot(i, frame);
+                }
+            }
+
+            frame.AddReference();
+            return frame;
         }
 
         private void BeginFrame(Av1SequenceHeader sequence, Av1FrameHeader header)
@@ -329,7 +363,7 @@ namespace AvifDecoding
             _coding.BeginTile(tileContext);
             symbols.Initialize(_data, position, tileSize, header.DisableCdfUpdate);
 
-            var decoder = new Av1TileCoder(frame, _coding.State, symbols, scratch, interScratch, tileContext, cancellationToken);
+            var decoder = new Av1TileCoder(frame, _coding.State, symbols, scratch, _coding.References, interScratch, tileContext, cancellationToken);
             decoder.DecodeTile(tileRow, tileCol);
 
             symbols.Exit();
@@ -342,7 +376,11 @@ namespace AvifDecoding
             var header = frame.Header;
             _coding.PostFilter.Apply(_scope, frame, _coding.State, cancellationToken);
             _coding.StoreFrame();
-            return frame;
+            if (header.ShowFrame)
+                return frame;
+
+            frame.Release();
+            return null;
         }
 
         public void Dispose()

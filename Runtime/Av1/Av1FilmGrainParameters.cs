@@ -68,5 +68,13 @@ namespace AvifDecoding
         public bool OverlapFlag { get; init; }
 
         public bool ClipToRestrictedRange { get; init; }
+
+        /// <summary>Returns the parameters of a frame that inherits these parameters with its own seed (<c>update_grain</c> equal to 0).</summary>
+        public Av1FilmGrainParameters WithSeed(int grainSeed)
+        {
+            var clone = (Av1FilmGrainParameters)MemberwiseClone();
+            clone.GrainSeed = grainSeed;
+            return clone;
+        }
     }
 }

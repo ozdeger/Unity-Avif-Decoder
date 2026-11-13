@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+
 namespace AvifDecoding
 {
     /// <summary>
@@ -22,6 +23,9 @@ namespace AvifDecoding
 
         /// <summary>The <c>IsInters</c> flag of <see cref="Flags"/>.</summary>
         public const byte IsInterFlag = 2;
+
+        /// <summary>The <c>SkipModes</c> flag of <see cref="Flags"/>.</summary>
+        public const byte SkipModeFlag = 4;
 
         /// <summary>The bit of <see cref="InterInfo"/> that holds <c>CompGroupIdxs</c>.</summary>
         public const int CompGroupIdxShift = 4;
@@ -50,6 +54,8 @@ namespace AvifDecoding
         private Av1PooledArray<sbyte>? _refFrames;
         private Av1PooledArray<short>? _mvs;
         private Av1PooledArray<byte>? _interInfo;
+        private Av1PooledArray<short>? _motionFieldMvs;
+        private Av1FrameBuffer? _segmentationSource;
         private Av1PooledArray<sbyte>? _cdefIdx;
 
         /// <summary>Gets the number of 4x4 luma columns of the frame (<c>MiCols</c>).</summary>
@@ -103,6 +109,18 @@ namespace AvifDecoding
         /// </summary>
         public Span<byte> InterInfo => Get(_interInfo);
 
+        /// <summary>
+        /// Gets <c>MotionFieldMvs</c>: for each reference frame type from <c>LAST_FRAME</c>, the row and the column of the motion
+        /// vector of each 8x8 luma block. Only allocated for a frame with <c>use_ref_frame_mvs</c>.
+        /// </summary>
+        public Span<short> MotionFieldMvs => Get(_motionFieldMvs);
+
+        /// <summary>
+        /// Gets <c>PrevSegmentIds</c>: the segmentation map that the frame predicts its own from, or an empty span when every
+        /// segment of this map is 0.
+        /// </summary>
+        public ReadOnlySpan<byte> PrevSegmentIds => _segmentationSource is null ? default : _segmentationSource.SegmentIds;
+
         /// <summary>Gets <c>cdef_idx</c>: one entry per 64x64 luma block, <see cref="CdefCols"/> entries per row; -1 when not coded.</summary>
         public Span<sbyte> CdefIdx => Get(_cdefIdx);
 
@@ -152,13 +170,18 @@ namespace AvifDecoding
                     _loopFilterTxSizes[plane] = Rent<byte>(scope, count);
                 }
             }
-            if (header.AllowIntrabc)
+
+            _segmentationSource = segmentationSource;
+            if (!header.FrameIsIntra || header.AllowIntrabc)
             {
                 _refFrames ??= Rent<sbyte>(scope, 2L * MiCols * MiRows);
                 _mvs ??= Rent<short>(scope, 4L * MiCols * MiRows);
                 _interInfo ??= Rent<byte>(scope, (long)MiCols * MiRows);
                 RefFrames.Fill(RefFrameNotWritten);
             }
+
+            if (header.UseRefFrameMvs)
+                _motionFieldMvs ??= Rent<short>(scope, 2L * Av1Constants.RefsPerFrame * (MiCols >> 1) * (MiRows >> 1));
 
             if (header.DeltaLfPresent && _deltaLfs is null)
                 _deltaLfs = Rent<sbyte>(scope, (long)MiCols * MiRows * Av1Constants.FrameLfCount);
@@ -207,8 +230,10 @@ namespace AvifDecoding
             _refFrames?.Dispose();
             _mvs?.Dispose();
             _interInfo?.Dispose();
-            _mvs = null;
+            _motionFieldMvs?.Dispose();
+            _mvs = _motionFieldMvs = null;
             _interInfo = null;
+            _segmentationSource = null;
             _cdefIdx?.Dispose();
             _miSizes = _yModes = _uvModes = _flags = _paletteSizes = _segmentIds = _interTxSizes = null;
             _deltaLfs = _cdefIdx = _refFrames = null;

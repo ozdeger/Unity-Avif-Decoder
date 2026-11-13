@@ -24,6 +24,21 @@ namespace AvifDecoding
             if (width <= 0 || height <= 0 || (long)width * height > MaxPixels)
                 throw new ImageResourceLimitException($"The image of {width}x{height} pixels exceeds the limit of {MaxPixels} pixels.");
         }
+
+        // The images that one output image is made of (its tiles, its alpha, its gain map, the inputs of its derivations and
+        // their canvases) may hold TotalFactor times MaxPixels together, and each counts for at least MinimumImagePixels,
+        // which bounds their number: a file cannot make the decoder work without end by nesting derived images.
+        private const int TotalFactor = 16;
+        private const long MinimumImagePixels = 128 * 128;
+        private long _composedPixels;
+
+        public void ChargeImage(int width, int height)
+        {
+            _composedPixels += Math.Max((long)width * height, MinimumImagePixels);
+            var budget = MaxPixels > long.MaxValue / TotalFactor ? long.MaxValue : MaxPixels * TotalFactor;
+            if (_composedPixels > budget)
+                throw new ImageResourceLimitException($"The images that the file is built from exceed the limit of {budget} pixels in total.");
+        }
     }
 
     internal sealed class AllocationScope

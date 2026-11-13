@@ -20,6 +20,14 @@ namespace AvifDecoding
             0, 1, 2, 3, 4, 4, 4, 4, 3, 0, 1, 2, 0,
         };
 
+        /// <summary>Gets <c>Compound_Mode_Ctx_Map[ 3 ][ COMP_NEWMV_CTXS ]</c> (section "Cdf selection process").</summary>
+        public static ReadOnlySpan<byte> CompoundModeCtxMap =>
+        new byte[] {
+            0, 1, 1, 1, 1,
+            1, 2, 3, 4, 4,
+            4, 4, 5, 6, 7,
+        };
+
         /// <summary>Gets <c>Coeff_Base_Ctx_Offset[ TX_SIZES_ALL ][ 5 ][ 5 ]</c> (section "Cdf selection process").</summary>
         public static ReadOnlySpan<byte> CoeffBaseCtxOffset =>
         new byte[] {

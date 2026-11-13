@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+
 namespace AvifDecoding
 {
     /// <summary>
@@ -18,20 +19,35 @@ namespace AvifDecoding
         private const int IntermediateLength = Av1InterPredictor.MaxIntermediateHeight * Stride;
 
         private readonly Av1PooledArray<int> _values;
+        private readonly Av1PooledArray<byte> _mask;
 
         public Av1InterScratch(AllocationScope scope)
         {
-            _values = Av1PooledArray<int>.Rent(scope, PredictionLength + IntermediateLength, clear: false);
+            _values = Av1PooledArray<int>.Rent(scope, (2 * PredictionLength) + IntermediateLength, clear: false);
+            try
+            {
+                _mask = Av1PooledArray<byte>.Rent(scope, PredictionLength, clear: false);
+            }
+            catch
+            {
+                _values.Dispose();
+                throw;
+            }
         }
 
-        // An intra block copy makes one prediction: there is no second reference and no blending mask
-        public Span<int> GetPrediction(int refList) => _values.Span.Slice(0, PredictionLength);
+        /// <summary>Gets <c>preds[ refList ]</c>: <see cref="Stride"/> values per row.</summary>
+        public Span<int> GetPrediction(int refList) => _values.Span.Slice(refList * PredictionLength, PredictionLength);
 
-        public Span<int> Intermediate => _values.Span.Slice(PredictionLength, IntermediateLength);
+        /// <summary>Gets the intermediate array of the block inter prediction process.</summary>
+        public Span<int> Intermediate => _values.Span.Slice(2 * PredictionLength, IntermediateLength);
+
+        /// <summary>Gets <c>Mask</c>: <see cref="Stride"/> weights per row.</summary>
+        public Span<byte> Mask => _mask.Span;
 
         public void Dispose()
         {
             _values.Dispose();
+            _mask.Dispose();
         }
     }
 }
